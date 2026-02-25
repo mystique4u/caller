@@ -1,0 +1,77 @@
+---
+- name: Configure WireGuard VPN Server
+  hosts: wireguard
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    wireguard_domain: "{{ lookup('env', 'WIREGUARD_DOMAIN') | default('', true) }}"
+    wireguard_admin_user: "{{ lookup('env', 'WIREGUARD_ADMIN_USER') | default('admin', true) }}"
+    wireguard_admin_password: "{{ lookup('env', 'WIREGUARD_ADMIN_PASSWORD') }}"
+    
+  tasks:
+    - name: Wait for server to be ready
+      wait_for_connection:
+        timeout: 300
+        delay: 5
+      
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      
+    - name: Ensure WireGuard is running
+      systemd:
+        name: wg-quick@wg0
+        state: started
+        enabled: yes
+      ignore_errors: yes
+      
+    - name: Check if WireGuard UI is installed
+      stat:
+        path: /usr/local/bin/wireguard-ui
+      register: wireguard_ui_check
+      
+    - name: Ensure WireGuard UI is running
+      systemd:
+        name: wireguard-ui
+        state: started
+        enabled: yes
+      when: wireguard_ui_check.stat.exists
+      
+    - name: Ensure Caddy is running
+      systemd:
+        name: caddy
+        state: started
+        enabled: yes
+      ignore_errors: yes
+      
+    - name: Install useful packages
+      apt:
+        name:
+          - htop
+          - vim
+          - curl
+          - wget
+          - net-tools
+          - ufw
+        state: present
+        
+    - name: Display WireGuard status
+      command: wg show
+      register: wg_status
+      changed_when: false
+      failed_when: false
+      
+    - name: Show WireGuard status
+      debug:
+        var: wg_status.stdout_lines
+      when: wg_status.rc == 0
+      
+    - name: Display server information
+      debug:
+        msg:
+          - "WireGuard VPN Server is ready!"
+          - "Access WireGuard UI at: https://{{ ansible_host }}"
+          - "Default credentials will be set during first login"
+          - "Remember to configure your domain DNS if using one"
