@@ -21,10 +21,13 @@ on:
 
 env:
   TERRAFORM_VERSION: '1.6.0'
-  # Terraform Cloud authentication
+  # Terraform Cloud authentication (for state storage only)
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-  # Variables are managed in Terraform Cloud workspace
-  # Go to: https://app.terraform.io/app/itin/workspaces/hetznercloud/variables
+  # Variables from GitHub Secrets
+  TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+  TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
+  TF_VAR_ssh_key_ids: ${{ secrets.SSH_KEY_IDS }}
+  TF_VAR_domain_name: ${{ secrets.WIREGUARD_DOMAIN }}
 
 jobs:
   terraform:
