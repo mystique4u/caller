@@ -19,6 +19,16 @@
       apt:
         update_cache: yes
         cache_valid_time: 3600
+    
+    - name: Clean up broken WireGuard UI user database
+      shell: |
+        if [ -f /usr/local/share/wireguard-ui/db/users/\$admin_username.json ]; then
+          systemctl stop wireguard-ui
+          rm -f /usr/local/share/wireguard-ui/db/users/*.json
+          systemctl start wireguard-ui
+        fi
+      args:
+        executable: /bin/bash
       
     - name: Ensure WireGuard is running
       systemd:
