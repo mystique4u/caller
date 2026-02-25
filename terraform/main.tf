@@ -27,7 +27,7 @@ data "hcloud_firewall" "existing" {
 # Hetzner Cloud VM resource with WireGuard pre-installed
 resource "hcloud_server" "vm" {
   name        = "wireguard-vpn-server"
-  server_type = "cx22"
+  server_type = "cx23"
   image       = "wireguard" # Pre-configured WireGuard image from Hetzner
   location    = "nbg1"
 
