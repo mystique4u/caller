@@ -39,12 +39,24 @@
         enabled: yes
       when: wireguard_ui_check.stat.exists
       
+    - name: Configure Caddy for HTTP on port 80
+      copy:
+        content: |
+          # Listen on HTTP port 80 (no HTTPS for IP addresses)
+          :80 {
+            reverse_proxy [::1]:5000
+          }
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart Caddy
+      
     - name: Ensure Caddy is running
       systemd:
         name: caddy
         state: started
         enabled: yes
-      ignore_errors: yes
       
     - name: Install useful packages
       apt:
@@ -72,6 +84,12 @@
       debug:
         msg:
           - "WireGuard VPN Server is ready!"
-          - "Access WireGuard UI at: https://{{ ansible_host }}"
-          - "Default credentials will be set during first login"
+          - "Access WireGuard UI at: http://{{ ansible_host }}"
+          - "Complete the initial setup wizard to create your admin account"
           - "Remember to configure your domain DNS if using one"
+  
+  handlers:
+    - name: Restart Caddy
+      systemd:
+        name: caddy
+        state: restarted
