@@ -60,13 +60,29 @@
         owner: root
         group: root
         mode: '0644'
-      notify: Restart Caddy
+      register: caddy_config_changed
+      
+    - name: Restart Caddy if config changed
+      systemd:
+        name: caddy
+        state: restarted
+        enabled: yes
+      when: caddy_config_changed.changed
       
     - name: Ensure Caddy is running
       systemd:
         name: caddy
         state: started
         enabled: yes
+    
+    - name: Restart WireGuard UI and Caddy to ensure proper session handling
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - wireguard-ui
+        - caddy
+      when: wireguard_ui_check.stat.exists
       
     - name: Install useful packages
       apt:
@@ -97,9 +113,3 @@
           - "Access WireGuard UI at: http://{{ ansible_host }}"
           - "Complete the initial setup wizard to create your admin account"
           - "Remember to configure your domain DNS if using one"
-  
-  handlers:
-    - name: Restart Caddy
-      systemd:
-        name: caddy
-        state: restarted
