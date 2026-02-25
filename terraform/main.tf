@@ -16,24 +16,24 @@ terraform {
 }
 
 provider "hcloud" {
-  token = var.hcloud_token  # Hetzner Cloud API token
+  token = var.hcloud_token # Hetzner Cloud API token
 }
 
 # Data block to retrieve the existing firewall by name
 data "hcloud_firewall" "existing" {
-  name = var.firewall_name  # Firewall name to attach
+  name = var.firewall_name # Firewall name to attach
 }
 
 # Hetzner Cloud VM resource with WireGuard pre-installed
 resource "hcloud_server" "vm" {
   name        = "wireguard-vpn-server"
   server_type = "cx22"
-  image       = "wireguard"  # Pre-configured WireGuard image from Hetzner
+  image       = "wireguard" # Pre-configured WireGuard image from Hetzner
   location    = "nbg1"
 
   public_net {
     ipv4_enabled = true
-    ipv6_enabled = true  # WireGuard supports IPv6
+    ipv6_enabled = true # WireGuard supports IPv6
   }
 
   firewall_ids = [data.hcloud_firewall.existing.id]
