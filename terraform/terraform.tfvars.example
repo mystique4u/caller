@@ -1,0 +1,16 @@
+# Hetzner Cloud API Token
+# Get it from: https://console.hetzner.cloud/ -> Security -> API Tokens
+hcloud_token = "your-hetzner-cloud-api-token-here"
+
+# Firewall name (must exist in your Hetzner project)
+# Create it via Console or Terraform before running this
+firewall_name = "default-firewall"
+
+# SSH Key IDs (list of SSH key IDs from your Hetzner project)
+# You can get these from: https://console.hetzner.cloud/ -> Security -> SSH Keys
+# Or via CLI: hcloud ssh-key list
+ssh_key_ids = [123456]
+
+# Domain name for WireGuard UI (optional but recommended)
+# Make sure DNS A/AAAA records point to the server IP
+domain_name = "vpn.example.com"
