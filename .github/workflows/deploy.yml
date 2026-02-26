@@ -565,57 +565,44 @@ jobs:
             
             echo ""
             echo "Expected IP: ${{ needs.terraform.outputs.public_ip }}"
-          fi
           
-      - name: Check HTTP/HTTPS services
+      - name: Check HTTPS services
         run: |
           domain="${{ secrets.DOMAIN_NAME }}"
           ip="${{ needs.terraform.outputs.public_ip }}"
           
-          if [ -n "$domain" ]; then
-            echo "🔍 Checking HTTPS endpoints..."
-            
-            # Check root domain
-            echo "Testing https://$domain ..."
-            if curl -sSf -k --connect-timeout 10 "https://$domain" > /dev/null 2>&1; then
-              echo "✅ Root domain is accessible"
-            else
-              echo "::warning::Root domain https://$domain is not responding yet (SSL may still be provisioning)"
-            fi
-            
-            # Check WireGuard UI subdomain
-            echo "Testing https://vpn.$domain ..."
-            if curl -sSf -k --connect-timeout 10 "https://vpn.$domain" > /dev/null 2>&1; then
-              echo "✅ WireGuard UI is accessible at https://vpn.$domain"
-            else
-              echo "::warning::WireGuard UI at https://vpn.$domain is not responding yet"
-            fi
-            
-            # Check Galène subdomain
-            echo "Testing https://meet.$domain ..."
-            if curl -sSf -k --connect-timeout 10 "https://meet.$domain" > /dev/null 2>&1; then
-              echo "✅ Galène is accessible at https://meet.$domain"
-            else
-              echo "::warning::Galène at https://meet.$domain is not responding yet"
-            fi
-            
-            # Check Traefik dashboard
-            echo "Testing Traefik dashboard..."
-            if curl -sSf --connect-timeout 10 "http://$ip:8080/api/overview" > /dev/null 2>&1; then
-              echo "✅ Traefik dashboard is accessible"
-            else
-              echo "::warning::Traefik dashboard is not responding"
-            fi
+          echo "🔍 Checking HTTPS endpoints..."
+          
+          # Check root domain
+          echo "Testing https://$domain ..."
+          if curl -sSf -k --connect-timeout 10 "https://$domain" > /dev/null 2>&1; then
+            echo "✅ Root domain is accessible"
           else
-            echo "🔍 Checking HTTP endpoints (no domain configured)..."
-            
-            # Check services via IP
-            if curl -sSf --connect-timeout 10 "http://$ip" > /dev/null 2>&1; then
-              echo "✅ Server is responding via HTTP"
-            else
-              echo "::error::Server is not responding via HTTP"
-              exit 1
-            fi
+            echo "::warning::Root domain https://$domain is not responding yet (SSL may still be provisioning)"
+          fi
+          
+          # Check WireGuard UI subdomain
+          echo "Testing https://vpn.$domain ..."
+          if curl -sSf -k --connect-timeout 10 "https://vpn.$domain" > /dev/null 2>&1; then
+            echo "✅ WireGuard UI is accessible at https://vpn.$domain"
+          else
+            echo "::warning::WireGuard UI at https://vpn.$domain is not responding yet"
+          fi
+          
+          # Check Galène subdomain
+          echo "Testing https://meet.$domain ..."
+          if curl -sSf -k --connect-timeout 10 "https://meet.$domain" > /dev/null 2>&1; then
+            echo "✅ Galène is accessible at https://meet.$domain"
+          else
+            echo "::warning::Galène at https://meet.$domain is not responding yet"
+          fi
+          
+          # Check Traefik dashboard
+          echo "Testing Traefik dashboard..."
+          if curl -sSf --connect-timeout 10 "http://$ip:8080/api/overview" > /dev/null 2>&1; then
+            echo "✅ Traefik dashboard is accessible"
+          else
+            echo "::warning::Traefik dashboard is not responding"
           fi
           
       - name: Check WireGuard service
@@ -639,47 +626,31 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** Deployment completed successfully" >> $GITHUB_STEP_SUMMARY
           echo "**Server IP:** $ip" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -n "$domain" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🌐 Service URLs" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "- **Root Domain:** https://$domain" >> $GITHUB_STEP_SUMMARY
-            echo "- **WireGuard UI:** https://vpn.$domain" >> $GITHUB_STEP_SUMMARY
-            echo "- **Galène Video:** https://meet.$domain" >> $GITHUB_STEP_SUMMARY
-            echo "- **Traefik Dashboard:** http://$ip:8080/dashboard/" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ⚠️ Important Notes" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "- SSL certificates may take 5-10 minutes to provision" >> $GITHUB_STEP_SUMMARY
-            echo "- Ensure DNS nameservers are updated at your registrar" >> $GITHUB_STEP_SUMMARY
-            echo "- WireGuard VPN port: 51820/UDP" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🌐 Service URLs (IP-based)" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "- **WireGuard UI:** http://$ip/wireguard" >> $GITHUB_STEP_SUMMARY
-            echo "- **Galène Video:** http://$ip/galene" >> $GITHUB_STEP_SUMMARY
-            echo "- **Traefik Dashboard:** http://$ip:8080/dashboard/" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Service URLs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Root Domain:** https://$domain" >> $GITHUB_STEP_SUMMARY
+          echo "- **WireGuard UI:** https://vpn.$domain" >> $GITHUB_STEP_SUMMARY
+          echo "- **Galène Video:** https://meet.$domain" >> $GITHUB_STEP_SUMMARY
+          echo "- **Traefik Dashboard:** http://$ip:8080/dashboard/" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Important Notes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- SSL certificates may take 5-10 minutes to provision" >> $GITHUB_STEP_SUMMARY
+          echo "- Ensure DNS nameservers are updated at your registrar" >> $GITHUB_STEP_SUMMARY
+          echo "- WireGuard VPN port: 51820/UDP" >> $GITHUB_STEP_SUMMARY
           
       - name: Display connection information
         run: |
           echo "🎉 WireGuard VPN Server deployed successfully!"
           echo "📍 Server IP: ${{ needs.terraform.outputs.public_ip }}"
-          if [ -n "${{ secrets.DOMAIN_NAME }}" ]; then
-            echo "🌐 Domain: ${{ secrets.DOMAIN_NAME }}"
-            echo "🔒 WireGuard UI: https://vpn.${{ secrets.DOMAIN_NAME }}"
-            echo "📹 Galène Video: https://meet.${{ secrets.DOMAIN_NAME }}"
-            echo "📊 Traefik Dashboard: https://${{ secrets.DOMAIN_NAME }}:8080/dashboard/"
-            echo ""
-            echo "⚠️  DNS Configuration Required:"
-            echo "   Update nameservers at your domain registrar to:"
-            echo "   - hydrogen.ns.hetzner.com"
-            echo "   - oxygen.ns.hetzner.com"
-            echo "   - helium.ns.hetzner.de"
-          else
-            echo "🌐 WireGuard UI: http://${{ needs.terraform.outputs.public_ip }}/wireguard"
-            echo "📹 Galène Video: http://${{ needs.terraform.outputs.public_ip }}/galene"
-            echo "📊 Traefik Dashboard: http://${{ needs.terraform.outputs.public_ip }}:8080/dashboard/"
-          fi
+          echo "🌐 Domain: ${{ secrets.DOMAIN_NAME }}"
+          echo "🔒 WireGuard UI: https://vpn.${{ secrets.DOMAIN_NAME }}"
+          echo "📹 Galène Video: https://meet.${{ secrets.DOMAIN_NAME }}"
+          echo "📊 Traefik Dashboard: https://${{ secrets.DOMAIN_NAME }}:8080/dashboard/"
+          echo ""
+          echo "⚠️  DNS Configuration Required:"
+          echo "   Update nameservers at your domain registrar to:"
+          echo "   - hydrogen.ns.hetzner.com"
+          echo "   - oxygen.ns.hetzner.com"
+          echo "   - helium.ns.hetzner.de"

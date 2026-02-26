@@ -8,13 +8,12 @@
 
   vars:
     server_ip: "{{ ansible_host }}"
-    domain_name: "{{ lookup('env', 'DOMAIN_NAME') | default('', true) }}"
-    email_address: "{{ lookup('env', 'EMAIL_ADDRESS') | default('admin@' + domain_name, true) }}"
+    domain_name: "{{ lookup('env', 'DOMAIN_NAME') }}"
+    email_address: "{{ lookup('env', 'EMAIL_ADDRESS') }}"
     letsencrypt_env: "{{ lookup('env', 'LETSENCRYPT_ENV') | default('production', true) }}"
     wireguard_port: 51820
     wireguard_ui_version: "0.6.2"
     galene_image: "deburau/galene:latest"
-    use_https: "{{ domain_name != '' }}"
 
   tasks:
     - name: Wait for server to be ready
@@ -199,33 +198,6 @@
             level = "INFO"
         dest: /opt/services/traefik/traefik.toml
         mode: '0644'
-      when: use_https
-
-    - name: Create Traefik static configuration without HTTPS (IP only)
-      copy:
-        content: |
-          [global]
-            checkNewVersion = false
-            sendAnonymousUsage = false
-
-          [api]
-            dashboard = true
-            insecure = true
-
-          [entryPoints]
-            [entryPoints.web]
-              address = ":80"
-
-          [providers]
-            [providers.docker]
-              endpoint = "unix:///var/run/docker.sock"
-              exposedByDefault = false
-
-          [log]
-            level = "INFO"
-        dest: /opt/services/traefik/traefik.toml
-        mode: '0644'
-      when: not use_https
 
     - name: Create Docker Compose file with HTTPS
       copy:
@@ -307,83 +279,6 @@
               driver: bridge
         dest: /opt/services/docker-compose.yml
         mode: '0644'
-      when: use_https
-
-    - name: Create Docker Compose file without HTTPS (IP only)
-      copy:
-        content: |
-          services:
-            traefik:
-              image: traefik:v2.11
-              container_name: traefik
-              restart: unless-stopped
-              ports:
-                - "80:80"
-                - "8080:8080"
-              volumes:
-                - /var/run/docker.sock:/var/run/docker.sock:ro
-                - /opt/services/traefik/traefik.toml:/etc/traefik/traefik.toml:ro
-                - /opt/services/traefik/dynamic:/etc/traefik/dynamic:ro
-              networks:
-                - services
-
-            wireguard-ui:
-              image: ngoduykhanh/wireguard-ui:{{ wireguard_ui_version }}
-              container_name: wireguard-ui
-              restart: unless-stopped
-              cap_add:
-                - NET_ADMIN
-              environment:
-                - WGUI_USERNAME=admin
-                - WGUI_PASSWORD=admin
-                - WGUI_SESSION_SECRET=supersecretkey123456789012345678901234567890
-                - WGUI_ENDPOINT_ADDRESS={{ server_ip }}
-                - WGUI_DNS=1.1.1.1,1.0.0.1
-                - WGUI_MTU=1420
-                - WGUI_PERSISTENT_KEEPALIVE=25
-                - WGUI_SERVER_INTERFACE_ADDRESSES=10.0.0.1/24
-                - WGUI_SERVER_LISTEN_PORT={{ wireguard_port }}
-                - WGUI_SERVER_POST_UP_SCRIPT=iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-                - WGUI_SERVER_POST_DOWN_SCRIPT=iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-              volumes:
-                - /opt/services/wireguard-ui:/app/db
-                - /etc/wireguard:/etc/wireguard
-              networks:
-                - services
-              labels:
-                - "traefik.enable=true"
-                - "traefik.http.routers.wireguard.rule=Host(`{{ server_ip }}`) && PathPrefix(`/wireguard`)"
-                - "traefik.http.routers.wireguard.entrypoints=web"
-                - "traefik.http.services.wireguard.loadbalancer.server.port=5000"
-                - "traefik.http.middlewares.wireguard-strip.stripprefix.prefixes=/wireguard"
-                - "traefik.http.routers.wireguard.middlewares=wireguard-strip"
-
-            galene:
-              image: "{{ galene_image }}"
-              container_name: galene
-              restart: unless-stopped
-              command: ["-http", "0.0.0.0:8443", "-insecure"]
-              volumes:
-                - /opt/services/galene/groups:/opt/galene/groups
-                - /opt/services/galene/data:/opt/galene/data
-              networks:
-                - services
-              labels:
-                - "traefik.enable=true"
-                - "traefik.http.routers.galene.rule=Host(`{{ server_ip }}`) && PathPrefix(`/galene`)"
-                - "traefik.http.routers.galene.entrypoints=web"
-                - "traefik.http.services.galene.loadbalancer.server.port=8443"
-                - "traefik.http.services.galene.loadbalancer.server.scheme=http"
-                - "traefik.http.middlewares.galene-strip.stripprefix.prefixes=/galene"
-                - "traefik.http.routers.galene.middlewares=galene-strip"
-
-          networks:
-            services:
-              name: services_network
-              driver: bridge
-        dest: /opt/services/docker-compose.yml
-        mode: '0644'
-      when: not use_https
 
     - name: Create Galène default group configuration
       copy:
@@ -402,25 +297,23 @@
       stat:
         path: /opt/services/traefik/acme/acme.json
       register: acme_file
-      when: use_https
 
     - name: Create acme.json if it doesn't exist
       file:
         path: /opt/services/traefik/acme/acme.json
         state: touch
         mode: '0600'
-      when: use_https and not acme_file.stat.exists
+      when: not acme_file.stat.exists
 
     - name: Display certificate status
       debug:
         msg: "{{ 'Using existing Let''s Encrypt certificates' if (acme_file.stat.exists and acme_file.stat.size > 0) else 'Will request new Let''s Encrypt certificates (first deployment)' }}"
-      when: use_https
 
     - name: Ensure acme.json has correct permissions
       file:
         path: /opt/services/traefik/acme/acme.json
         mode: '0600'
-      when: use_https and acme_file.stat.exists
+      when: acme_file.stat.exists
 
     - name: Pull and start Docker services
       shell: |
@@ -473,23 +366,3 @@
           - "    - helium.ns.hetzner.de"
           - ""
           - "=============================================="
-      when: use_https
-
-    - name: Show server information without domain
-      debug:
-        msg:
-          - "=============================================="
-          - "VPN and Services Server is Ready (HTTP only)!"
-          - "=============================================="
-          - "Server IP: {{ server_ip }}"
-          - ""
-          - "Services:"
-          - "  - Traefik Dashboard: http://{{ server_ip }}:8080/dashboard/"
-          - "  - WireGuard UI: http://{{ server_ip }}/wireguard"
-          - "    Default login: admin / admin (CHANGE THIS!)"
-          - "  - Galène Video: http://{{ server_ip }}/galene"
-          - "    Room: public (operator password: admin)"
-          - ""
-          - "Note: Using IP address. For HTTPS, configure DOMAIN_NAME."
-          - "=============================================="
-      when: not use_https
