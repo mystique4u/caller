@@ -13,7 +13,10 @@
     letsencrypt_env: "{{ lookup('env', 'LETSENCRYPT_ENV') | default('production', true) }}"
     wireguard_port: 51820
     wireguard_ui_version: "0.6.2"
-    galene_image: "deburau/galene:latest"
+    jitsi_web_image: "jitsi/web:stable"
+    jitsi_prosody_image: "jitsi/prosody:stable"
+    jitsi_jicofo_image: "jitsi/jicofo:stable"
+    jitsi_jvb_image: "jitsi/jvb:stable"
 
   tasks:
     - name: Wait for server to be ready
@@ -159,8 +162,6 @@
         mode: '0755'
       loop:
         - /opt/services/wireguard-ui
-        - /opt/services/galene/groups
-        - /opt/services/galene/data
         - /opt/services/traefik/dynamic
         - /opt/services/traefik/acme
 
@@ -268,42 +269,83 @@
                 - "traefik.http.services.wireguard.loadbalancer.server.port=5000"
                 - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
 
-            galene:
-              image: "{{ galene_image }}"
-              container_name: galene
+            jitsi-web:
+              image: "{{ jitsi_web_image }}"
+              container_name: jitsi-web
               restart: unless-stopped
-              command: ["-http", ":8080", "-insecure"]
-              volumes:
-                - /opt/services/galene/groups:/opt/galene/groups
-                - /opt/services/galene/data:/opt/galene/data
+              environment:
+                - ENABLE_AUTH=0
+                - ENABLE_GUESTS=1
+                - PUBLIC_URL=https://meet.{{ domain_name }}
+                - XMPP_DOMAIN=meet.jitsi
+                - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+                - XMPP_BOSH_URL_BASE=http://jitsi-prosody:5280
+                - XMPP_MUC_DOMAIN=muc.meet.jitsi
+                - JVB_TCP_HARVESTER_DISABLED=true
               networks:
                 - services
               labels:
                 - "traefik.enable=true"
-                - "traefik.http.routers.galene.rule=Host(`meet.{{ domain_name }}`)"
-                - "traefik.http.routers.galene.entrypoints=websecure"
-                - "traefik.http.services.galene.loadbalancer.server.port=8080"
-                - "traefik.http.services.galene.loadbalancer.server.scheme=http"
-                - "traefik.http.routers.galene.tls.certresolver=letsencrypt"
+                - "traefik.http.routers.jitsi.rule=Host(`meet.{{ domain_name }}`)"
+                - "traefik.http.routers.jitsi.entrypoints=websecure"
+                - "traefik.http.services.jitsi.loadbalancer.server.port=80"
+                - "traefik.http.routers.jitsi.tls.certresolver=letsencrypt"
+
+            jitsi-prosody:
+              image: "{{ jitsi_prosody_image }}"
+              container_name: jitsi-prosody
+              restart: unless-stopped
+              environment:
+                - XMPP_DOMAIN=meet.jitsi
+                - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+                - XMPP_MUC_DOMAIN=muc.meet.jitsi
+                - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+                - JICOFO_COMPONENT_SECRET=jicofo_secret
+                - JVB_AUTH_USER=jvb
+                - JVB_AUTH_PASSWORD=jvb_password
+                - ENABLE_AUTH=0
+                - ENABLE_GUESTS=1
+              networks:
+                - services
+
+            jitsi-jicofo:
+              image: "{{ jitsi_jicofo_image }}"
+              container_name: jitsi-jicofo
+              restart: unless-stopped
+              environment:
+                - XMPP_DOMAIN=meet.jitsi
+                - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+                - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+                - XMPP_SERVER=jitsi-prosody
+                - JICOFO_COMPONENT_SECRET=jicofo_secret
+                - JICOFO_AUTH_USER=focus
+                - JICOFO_AUTH_PASSWORD=focus_password
+              networks:
+                - services
+
+            jitsi-jvb:
+              image: "{{ jitsi_jvb_image }}"
+              container_name: jitsi-jvb
+              restart: unless-stopped
+              ports:
+                - "10000:10000/udp"
+              environment:
+                - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+                - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+                - XMPP_SERVER=jitsi-prosody
+                - JVB_AUTH_USER=jvb
+                - JVB_AUTH_PASSWORD=jvb_password
+                - JVB_STUN_SERVERS=meet-jit-si-turnrelay.jitsi.net:443
+                - JVB_PORT=10000
+                - PUBLIC_URL=https://meet.{{ domain_name }}
+              networks:
+                - services
 
           networks:
             services:
               name: services_network
               driver: bridge
         dest: /opt/services/docker-compose.yml
-        mode: '0644'
-
-    - name: Create Galène default group configuration
-      copy:
-        content: |
-          {
-            "op": [{"password": "admin"}],
-            "presenter": [{}],
-            "public": true,
-            "description": "Public meeting room",
-            "allow-recording": true
-          }
-        dest: /opt/services/galene/groups/public.json
         mode: '0644'
 
     - name: Check if Let's Encrypt certificates already exist
@@ -370,8 +412,8 @@
           - "  - Traefik Dashboard: https://{{ domain_name }}:8080/dashboard/"
           - "  - WireGuard UI: https://vpn.{{ domain_name }}"
           - "    Default login: admin / admin (CHANGE THIS!)"
-          - "  - Galène Video: https://meet.{{ domain_name }}"
-          - "    Room: public (operator password: admin)"
+          - "  - Jitsi Meet: https://meet.{{ domain_name }}"
+          - "    No authentication required - ready to use!"
           - ""
           - "DNS Configuration:"
           - "  Update your domain's nameservers to:"
