@@ -11,7 +11,8 @@
     domain_name: "{{ lookup('env', 'DOMAIN_NAME') | default('', true) }}"
     email_address: "{{ lookup('env', 'EMAIL_ADDRESS') | default('admin@' + domain_name, true) }}"
     wireguard_port: 51820
-    wireguard_ui_version: "v0.6.2"
+    wireguard_ui_version: "0.6.2"
+    galene_image: "ghcr.io/galene-org/galene:latest"
     use_https: "{{ domain_name != '' }}"
 
   tasks:
@@ -278,7 +279,7 @@
                 - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
 
             galene:
-              image: galene/galene:latest
+              image: "{{ galene_image }}"
               container_name: galene
               restart: unless-stopped
               command: ["-http", "0.0.0.0:8443"]
@@ -351,7 +352,7 @@
                 - "traefik.http.routers.wireguard.middlewares=wireguard-strip"
 
             galene:
-              image: galene/galene:latest
+              image: "{{ galene_image }}"
               container_name: galene
               restart: unless-stopped
               command: ["-http", "0.0.0.0:8443", "-insecure"]
