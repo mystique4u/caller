@@ -73,6 +73,18 @@
         state: started
         enabled: yes
 
+    - name: Enable IP forwarding for VPN
+      sysctl:
+        name: "{{ item }}"
+        value: '1'
+        sysctl_set: yes
+        state: present
+        reload: yes
+      loop:
+        - net.ipv4.ip_forward
+        - net.ipv4.conf.all.forwarding
+        - net.ipv6.conf.all.forwarding
+
     - name: Install Docker SDK for Python (Ubuntu 24.04 compatible)
       apt:
         name:
@@ -227,6 +239,11 @@
               restart: unless-stopped
               cap_add:
                 - NET_ADMIN
+                - SYS_MODULE
+              sysctls:
+                - net.ipv4.ip_forward=1
+                - net.ipv4.conf.all.src_valid_mark=1
+              privileged: true
               environment:
                 - WGUI_USERNAME=admin
                 - WGUI_PASSWORD=admin
@@ -237,8 +254,8 @@
                 - WGUI_PERSISTENT_KEEPALIVE=25
                 - WGUI_SERVER_INTERFACE_ADDRESSES=10.0.0.1/24
                 - WGUI_SERVER_LISTEN_PORT={{ wireguard_port }}
-                - WGUI_SERVER_POST_UP_SCRIPT=iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-                - WGUI_SERVER_POST_DOWN_SCRIPT=iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+                - WGUI_SERVER_POST_UP_SCRIPT=iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+                - WGUI_SERVER_POST_DOWN_SCRIPT=iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
               volumes:
                 - /opt/services/wireguard-ui:/app/db
                 - /etc/wireguard:/etc/wireguard
