@@ -575,7 +575,7 @@ jobs:
             echo ""
             
             echo "=== Checking if all services are running ==="
-            required_containers="traefik wireguard-ui galene"
+            required_containers="traefik wireguard-ui jitsi-web jitsi-prosody jitsi-jicofo jitsi-jvb"
             all_running=true
             
             for container in $required_containers; do
@@ -606,8 +606,8 @@ jobs:
             docker inspect wireguard-ui --format='{{range $key, $value := .Config.Labels}}{{$key}}={{$value}}{{"\n"}}{{end}}' | grep traefik || echo "No Traefik labels found!"
             
             echo ""
-            echo "=== Galène Labels ==="
-            docker inspect galene --format='{{range $key, $value := .Config.Labels}}{{$key}}={{$value}}{{"\n"}}{{end}}' | grep traefik || echo "No Traefik labels found!"
+            echo "=== Jitsi Meet Labels ==="
+            docker inspect jitsi-web --format='{{range $key, $value := .Config.Labels}}{{$key}}={{$value}}{{"\n"}}{{end}}' | grep traefik || echo "No Traefik labels found!"
             
             echo ""
             echo "=== Traefik Container Logs (last 30 lines) ==="
@@ -654,12 +654,12 @@ jobs:
             echo "::warning::WireGuard UI at https://vpn.$domain is not responding yet"
           fi
           
-          # Check Galène subdomain
+          # Check Jitsi Meet subdomain
           echo "Testing https://meet.$domain ..."
           if curl -sSf -k --connect-timeout 10 "https://meet.$domain" > /dev/null 2>&1; then
-            echo "✅ Galène is accessible at https://meet.$domain"
+            echo "✅ Jitsi Meet is accessible at https://meet.$domain"
           else
-            echo "::warning::Galène at https://meet.$domain is not responding yet"
+            echo "::warning::Jitsi Meet at https://meet.$domain is not responding yet"
           fi
           
           # Check Traefik dashboard
@@ -696,7 +696,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Root Domain:** https://$domain" >> $GITHUB_STEP_SUMMARY
           echo "- **WireGuard UI:** https://vpn.$domain" >> $GITHUB_STEP_SUMMARY
-          echo "- **Galène Video:** https://meet.$domain" >> $GITHUB_STEP_SUMMARY
+          echo "- **Jitsi Meet:** https://meet.$domain" >> $GITHUB_STEP_SUMMARY
           echo "- **Traefik Dashboard:** http://$ip:8080/dashboard/" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### ⚠️ Important Notes" >> $GITHUB_STEP_SUMMARY
@@ -711,7 +711,7 @@ jobs:
           echo "📍 Server IP: ${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           echo "🌐 Domain: ${{ secrets.DOMAIN_NAME }}"
           echo "🔒 WireGuard UI: https://vpn.${{ secrets.DOMAIN_NAME }}"
-          echo "📹 Galène Video: https://meet.${{ secrets.DOMAIN_NAME }}"
+          echo "📹 Jitsi Meet: https://meet.${{ secrets.DOMAIN_NAME }}"
           echo "📊 Traefik Dashboard: https://${{ secrets.DOMAIN_NAME }}:8080/dashboard/"
           echo ""
           echo "⚠️  DNS Configuration Required:"
