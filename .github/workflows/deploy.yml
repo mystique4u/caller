@@ -367,22 +367,23 @@ jobs:
           echo "🔧 Initializing Terraform..."
           terraform init
         
-      - name: Download Plan
+      - name: Download Plan (if available)
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan
           path: terraform/
         continue-on-error: true
+        id: download_plan
         
       - name: Terraform Apply
         id: apply
         run: |
           echo "🚀 Applying Terraform changes..."
           if [ -f "tfplan" ]; then
-            echo "Using pre-generated plan"
+            echo "✅ Using pre-generated plan from this workflow run"
             terraform apply -auto-approve tfplan
           else
-            echo "No plan found, creating new plan and applying"
+            echo "ℹ️ No plan artifact found (manual trigger), generating new plan and applying"
             terraform apply -auto-approve -input=false
           fi
           echo "✅ Infrastructure deployed successfully"
