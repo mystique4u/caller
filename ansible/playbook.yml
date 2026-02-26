@@ -13,7 +13,7 @@
     letsencrypt_env: "{{ lookup('env', 'LETSENCRYPT_ENV') | default('production', true) }}"
     wireguard_port: 51820
     wireguard_ui_version: "0.6.2"
-    galene_image: "ghcr.io/galene-org/galene:latest"
+    galene_image: "deburau/galene:latest"
     use_https: "{{ domain_name != '' }}"
 
   tasks:
@@ -394,8 +394,6 @@
         dest: /opt/services/galene/groups/public.json
         mode: '0644'
 
-    - name: Set correct permissions for acme.json
-      file:
     - name: Check if Let's Encrypt certificates already exist
       stat:
         path: /opt/services/traefik/acme/acme.json
@@ -411,7 +409,7 @@
 
     - name: Display certificate status
       debug:
-        msg: "{{ 'Using existing Let\'s Encrypt certificates' if (acme_file.stat.exists and acme_file.stat.size > 0) else 'Will request new Let\'s Encrypt certificates (first deployment)' }}"
+        msg: "{{ 'Using existing Let''s Encrypt certificates' if (acme_file.stat.exists and acme_file.stat.size > 0) else 'Will request new Let''s Encrypt certificates (first deployment)' }}"
       when: use_https
 
     - name: Ensure acme.json has correct permissions
