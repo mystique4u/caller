@@ -9,7 +9,7 @@ terraform {
   required_providers {
     hcloud = {
       source  = "hetznercloud/hcloud"
-      version = "1.60.1"
+      version = "~> 1.60"
     }
   }
 }
@@ -36,6 +36,16 @@ resource "hcloud_firewall" "vpn_services" {
     direction = "in"
     protocol  = "tcp"
     port      = "80"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "443"
     source_ips = [
       "0.0.0.0/0",
       "::/0"
@@ -84,6 +94,62 @@ resource "hcloud_server" "vm" {
   }
 }
 
+# Use existing DNS Zone (instead of creating new one)
+data "hcloud_dns_zone" "domain" {
+  count = var.domain_name != "" ? 1 : 0
+  name  = var.domain_name
+}
+
+# DNS A Record for root domain
+resource "hcloud_dns_record" "root" {
+  count   = var.domain_name != "" ? 1 : 0
+  zone_id = data.hcloud_dns_zone.domain[0].id
+  name    = "@"
+  value   = hcloud_server.vm.ipv4_address
+  type    = "A"
+  ttl     = 300
+}
+
+# DNS AAAA Record for root domain (IPv6)
+resource "hcloud_dns_record" "root_ipv6" {
+  count   = var.domain_name != "" ? 1 : 0
+  zone_id = data.hcloud_dns_zone.domain[0].id
+  name    = "@"
+  value   = hcloud_server.vm.ipv6_address
+  type    = "AAAA"
+  ttl     = 300
+}
+
+# DNS A Record for www subdomain
+resource "hcloud_dns_record" "www" {
+  count   = var.domain_name != "" ? 1 : 0
+  zone_id = data.hcloud_dns_zone.domain[0].id
+  name    = "www"
+  value   = hcloud_server.vm.ipv4_address
+  type    = "A"
+  ttl     = 300
+}
+
+# DNS A Record for wireguard subdomain
+resource "hcloud_dns_record" "wireguard" {
+  count   = var.domain_name != "" ? 1 : 0
+  zone_id = data.hcloud_dns_zone.domain[0].id
+  name    = "vpn"
+  value   = hcloud_server.vm.ipv4_address
+  type    = "A"
+  ttl     = 300
+}
+
+# DNS A Record for galene subdomain
+resource "hcloud_dns_record" "galene" {
+  count   = var.domain_name != "" ? 1 : 0
+  zone_id = data.hcloud_dns_zone.domain[0].id
+  name    = "meet"
+  value   = hcloud_server.vm.ipv4_address
+  type    = "A"
+  ttl     = 300
+}
+
 # Outputs
 output "public_ip" {
   description = "The public IPv4 address of the VM"
@@ -105,6 +171,21 @@ output "firewall_id" {
   value       = hcloud_firewall.vpn_services.id
 }
 
+output "domain_name" {
+  description = "The configured domain name"
+  value       = var.domain_name != "" ? var.domain_name : "Not configured"
+}
+
+output "dns_zone_id" {
+  description = "The DNS zone ID"
+  value       = var.domain_name != "" ? data.hcloud_dns_zone.domain[0].id : "N/A"
+}
+
+output "nameservers" {
+  description = "Nameservers for the domain"
+  value       = var.domain_name != "" ? ["hydrogen.ns.hetzner.com", "oxygen.ns.hetzner.com", "helium.ns.hetzner.de"] : []
+}
+
 # Variables
 variable "hcloud_token" {
   description = "Hetzner Cloud API token"
@@ -122,4 +203,10 @@ variable "ssh_key_ids" {
   description = "List of SSH key IDs to add to the server"
   type        = list(number)
   default     = []
+}
+
+variable "domain_name" {
+  description = "Domain name for the services (e.g., example.com)"
+  type        = string
+  default     = ""
 }

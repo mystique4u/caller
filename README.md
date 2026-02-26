@@ -1,18 +1,29 @@
 # VPN & Services Server
 
-Fully automated deployment of **WireGuard VPN**, **Galène video conferencing**, and **Traefik reverse proxy** on Hetzner Cloud.
+Fully automated deployment of **WireGuard VPN**, **Galène video conferencing**, and **Traefik reverse proxy** on Hetzner Cloud with optional **custom domain and HTTPS support**.
 
 ## 🚀 Features
 
 - ✅ **Fully Automated** - Zero manual configuration
 - ✅ **WireGuard VPN** with Web UI for client management
 - ✅ **Galène** - Lightweight video conferencing
-- ✅ **Traefik** - Modern reverse proxy
+- ✅ **Traefik** - Modern reverse proxy with automatic HTTPS
 - ✅ **Docker-based** - All services containerized
 - ✅ **Firewall Automated** - Created and managed by Terraform
-- ✅ **IP-based Access** - Works out of the box
+- ✅ **Custom Domain Support** - Automatic DNS and SSL certificates
+- ✅ **IP-based Access** - Works out of the box without domain
 
 ## 📋 Access Your Services
+
+### With Custom Domain (HTTPS)
+
+| Service               | URL                                      | Credentials                   |
+| --------------------- | ---------------------------------------- | ----------------------------- |
+| **Traefik Dashboard** | `https://yourdomain.com:8080/dashboard/` | No auth                       |
+| **WireGuard UI**      | `https://vpn.yourdomain.com`             | `admin` / `admin`             |
+| **Galène Video**      | `https://meet.yourdomain.com`            | Room: `public`, Pass: `admin` |
+
+### Without Domain (HTTP)
 
 | Service               | URL                              | Credentials                   |
 | --------------------- | -------------------------------- | ----------------------------- |
@@ -22,15 +33,27 @@ Fully automated deployment of **WireGuard VPN**, **Galène video conferencing**,
 
 ## ⚡ Quick Start
 
-1. **Configure GitHub Secrets** (see below)
+### Without Domain (Basic)
+
+1. **Configure Required GitHub Secrets** (see below)
 2. **Push to main** or trigger "Destroy and Redeploy" workflow
 3. **Wait ~10 minutes** for deployment
-4. **Access services** using your server IP
+4. **Access services** using your server IP (HTTP)
 5. **Change default passwords** immediately!
+
+### With Custom Domain (HTTPS)
+
+1. **Complete basic setup** above
+2. **Follow**: [DOMAIN_QUICKSTART.md](DOMAIN_QUICKSTART.md)
+3. **Add 3 more secrets**: `HETZNER_DNS_TOKEN`, `DOMAIN_NAME`, `EMAIL_ADDRESS`
+4. **Redeploy** and update nameservers at domain registrar
+5. **Access services** via HTTPS with your domain
 
 ## 🔐 Required GitHub Secrets
 
 Go to: `https://github.com/YOUR_USERNAME/caller/settings/secrets/actions`
+
+### Basic Setup (HTTP with IP)
 
 | Secret Name       | Description                  | Example Value           |
 | ----------------- | ---------------------------- | ----------------------- |
@@ -40,7 +63,20 @@ Go to: `https://github.com/YOUR_USERNAME/caller/settings/secrets/actions`
 | `SSH_KEY_IDS`     | SSH key IDs as JSON array    | `[108153935]`           |
 | `SSH_PRIVATE_KEY` | Private SSH key for Ansible  | Full key content        |
 
-**See detailed setup**: [`docs/GITHUB_SECRETS.md`](docs/GITHUB_SECRETS.md)
+### Optional: Custom Domain (HTTPS)
+
+| Secret Name     | Description                 | Example Value       |
+| --------------- | --------------------------- | ------------------- |
+| `DOMAIN_NAME`   | Your domain                 | `example.com`       |
+| `EMAIL_ADDRESS` | Email for SSL notifications | `admin@example.com` |
+
+**Note**: DNS is automatically managed by your `HCLOUD_TOKEN` - no separate DNS token needed!
+
+**Detailed setup guides**:
+
+- [GitHub Secrets Guide](docs/GITHUB_SECRETS.md)
+- [Domain Setup Guide](docs/DOMAIN_SETUP.md)
+- [Quick Domain Setup](DOMAIN_QUICKSTART.md)
 
 ## 🏗️ Infrastructure
 
