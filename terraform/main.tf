@@ -71,6 +71,15 @@ resource "hcloud_firewall" "vpn_services" {
       "::/0"
     ]
   }
+
+  rule {
+    direction = "in"
+    protocol  = "icmp"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
 }
 
 # Create server
