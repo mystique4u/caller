@@ -1,23 +1,28 @@
-name: Deploy WireGuard VPN to Hetzner Cloud
+name: Deploy Infrastructure
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
+    paths:
+      - 'terraform/**'
+      - 'ansible/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
       action:
-        description: 'Action to perform'
+        description: 'Terraform action to perform'
         required: true
-        default: 'apply'
+        default: 'plan'
         type: choice
         options:
           - plan
           - apply
-          - destroy
+      skip_validation:
+        description: 'Skip validation stages (not recommended)'
+        required: false
+        default: false
+        type: boolean
 
 env:
   TERRAFORM_VERSION: '1.6.0'
@@ -30,9 +35,239 @@ env:
   TF_VAR_domain_name: ${{ secrets.DOMAIN_NAME }}
 
 jobs:
-  terraform:
-    name: Terraform Plan & Apply
+  code-quality:
+    name: Code Quality Checks
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_validation != 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Check for secrets in code
+        run: |
+          echo "🔍 Scanning for potential secrets..."
+          if grep -r -i -E "(password|secret|api_key|token).*=.*['\"][^'\"]{8,}['\"]" terraform/ ansible/ 2>/dev/null; then
+            echo "::error::Found potential hardcoded secrets!"
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets detected"
+          
+      - name: Check file permissions
+        run: |
+          echo "🔍 Checking for executable files..."
+          find . -type f -name "*.tf" -executable -o -name "*.yml" -executable -o -name "*.yaml" -executable | while read file; do
+            echo "::warning::File should not be executable: $file"
+          done
+          
+      - name: Validate Ansible syntax
+        run: |
+          echo "🔍 Installing Ansible..."
+          pip install ansible ansible-lint
+          echo "✅ Checking Ansible playbook syntax..."
+          for playbook in ansible/*.yml; do
+            if [ -f "$playbook" ]; then
+              ansible-playbook --syntax-check "$playbook" || exit 1
+            fi
+          done
+          echo "✅ Ansible syntax valid"
+
+  terraform-validate:
+    name: Terraform Validation
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_validation != 'true'
+    defaults:
+      run:
+        working-directory: ./terraform
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          
+      - name: Terraform Format Check
+        id: fmt
+        run: |
+          echo "🔍 Checking Terraform formatting..."
+          terraform fmt -check -recursive
+          echo "✅ Terraform files are properly formatted"
+        
+      - name: Terraform Init
+        id: init
+        run: |
+          echo "🔧 Initializing Terraform..."
+          terraform init
+          echo "✅ Terraform initialized"
+        
+      - name: Terraform Validate
+        id: validate
+        run: |
+          echo "🔍 Validating Terraform configuration..."
+          terraform validate -no-color
+          echo "✅ Terraform configuration is valid"
+          
+      - name: Check for Terraform best practices
+        run: |
+          echo "🔍 Checking Terraform best practices..."
+          # Check for missing descriptions
+          if grep -n "variable.*{" main.tf | grep -v "description"; then
+            echo "::warning::Some variables are missing descriptions"
+          fi
+          echo "✅ Best practices check complete"
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_validation != 'true'
+    defaults:
+      run:
+        working-directory: ./terraform
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          
+      - name: Terraform Init
+        run: terraform init
+        
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform
+          soft_fail: true
+          
+      - name: Check for common security issues
+        run: |
+          echo "🔍 Checking for common security misconfigurations..."
+          # Check for overly permissive firewall rules
+          if grep -n "0.0.0.0/0" main.tf | grep -v "#"; then
+            echo "::warning::Found potential overly permissive firewall rules"
+          fi
+          echo "✅ Security check complete"
+
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: [code-quality, terraform-validate, security-scan]
+    if: |
+      always() &&
+      (needs.code-quality.result == 'success' || needs.code-quality.result == 'skipped') &&
+      (needs.terraform-validate.result == 'success' || needs.terraform-validate.result == 'skipped') &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped')
+    defaults:
+      run:
+        working-directory: ./terraform
+    
+    outputs:
+      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
+      has_changes: ${{ steps.plan.outputs.exitcode == '2' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          
+      - name: Terraform Init
+        run: |
+          echo "🔧 Initializing Terraform..."
+          terraform init
+        
+      - name: Terraform Plan
+        id: plan
+        run: |
+          echo "📋 Creating Terraform plan..."
+          terraform plan -detailed-exitcode -no-color -out=tfplan || export exitcode=$?
+          echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
+          
+          # Save plan output for review
+          terraform show -no-color tfplan > plan_output.txt 2>&1 || true
+          
+          exit ${exitcode}
+        continue-on-error: true
+        
+      - name: Upload Plan
+        if: steps.plan.outputs.exitcode == '2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: |
+            terraform/tfplan
+            terraform/plan_output.txt
+          retention-days: 5
+          
+      - name: Create Plan Summary
+        if: steps.plan.outputs.exitcode == '2'
+        run: |
+          echo "## 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Changes detected! Review the plan before applying:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```terraform' >> $GITHUB_STEP_SUMMARY
+          head -n 100 plan_output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To apply these changes, trigger workflow with 'apply' action." >> $GITHUB_STEP_SUMMARY
+          
+      - name: Plan Status
+        run: |
+          exitcode="${{ steps.plan.outputs.exitcode }}"
+          if [ "$exitcode" == "0" ]; then
+            echo "✅ No infrastructure changes detected"
+          elif [ "$exitcode" == "2" ]; then
+            echo "📋 Infrastructure changes detected - review plan before applying"
+            echo "::notice::Changes detected. Run workflow with 'apply' action to deploy."
+          else
+            echo "❌ Plan failed - check logs for details"
+            exit 1
+          fi
+
+  approval-gate:
+    name: Deployment Approval Required
+    runs-on: ubuntu-latest
+    needs: plan
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      github.event.inputs.action == 'apply' &&
+      needs.plan.outputs.plan_exitcode == '2'
+    
+    steps:
+      - name: Approval Notice
+        run: |
+          echo "🚦 Deployment requires manual approval"
+          echo "Review the Terraform plan in the artifacts before proceeding"
+          echo "Changes will be applied to production infrastructure"
+          
+  terraform:
+    name: Terraform Apply (Manual)
+    runs-on: ubuntu-latest
+    needs: [plan, approval-gate]
+    if: |
+      always() &&
+      github.event_name == 'workflow_dispatch' && 
+      github.event.inputs.action == 'apply' &&
+      needs.plan.result == 'success'
+    environment:
+      name: production
+      url: https://${{ secrets.DOMAIN_NAME }}
     defaults:
       run:
         working-directory: ./terraform
@@ -51,38 +286,30 @@ jobs:
           terraform_wrapper: false
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
           
-      - name: Terraform Format Check
-        id: fmt
-        run: terraform fmt -check -recursive
-        continue-on-error: true
-        
       - name: Terraform Init
-        id: init
-        run: terraform init
-        
-      - name: Terraform Validate
-        id: validate
-        run: terraform validate -no-color
-        
-      - name: Terraform Plan
-        id: plan
         run: |
-          terraform plan -no-color -input=false -out=tfplan
-        continue-on-error: false
+          echo "🔧 Initializing Terraform..."
+          terraform init
+        
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: terraform/
+        continue-on-error: true
         
       - name: Terraform Apply
         id: apply
-        if: |
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         run: |
-          terraform apply -auto-approve -input=false tfplan
-          
-      - name: Terraform Destroy
-        id: destroy
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
-        run: |
-          terraform destroy -auto-approve -input=false
+          echo "🚀 Applying Terraform changes..."
+          if [ -f "tfplan" ]; then
+            echo "Using pre-generated plan"
+            terraform apply -auto-approve tfplan
+          else
+            echo "No plan found, creating new plan and applying"
+            terraform apply -auto-approve -input=false
+          fi
+          echo "✅ Infrastructure deployed successfully"
           
       - name: Get Terraform Outputs
         id: terraform_output
@@ -106,9 +333,14 @@ jobs:
           retention-days: 30
 
   ansible:
-    name: Configure WireGuard with Ansible
+    name: Configure Server
     runs-on: ubuntu-latest
     needs: terraform
+    if: |
+      always() &&
+      needs.terraform.result == 'success' &&
+      github.event_name == 'workflow_dispatch' && 
+      github.event.inputs.action == 'apply'
     if: needs.terraform.outputs.public_ip != ''
     
     steps:
