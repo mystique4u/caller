@@ -1,128 +1,253 @@
-terraform {terraform {
+terraform {terraform {terraform {
 
-  backend "remote" {  backend "remote" {
+  backend "remote" {
 
-    organization = "itin"    organization = "itin"
+    organization = "itin"  backend "remote" {  backend "remote" {
 
     workspaces {
 
-      name = "hetznercloud"    workspaces {
+      name = "hetznercloud"    organization = "itin"    organization = "itin"
 
-    }      name = "hetznercloud"
+    }
 
-  }    }
+  }    workspaces {
+
+
+
+  required_providers {      name = "hetznercloud"    workspaces {
+
+    hcloud = {
+
+      source  = "hetznercloud/hcloud"    }      name = "hetznercloud"
+
+      version = "1.60.1"
+
+    }  }    }
 
   }
 
-  required_providers {
-
-    hcloud = {  required_providers {
-
-      source  = "hetznercloud/hcloud"    hcloud = {
-
-      version = "1.60.1"      source  = "hetznercloud/hcloud"
-
-    }      version = "1.60.1"
-
-  }    }
-
 }  }
 
+
+
+provider "hcloud" {  required_providers {
+
+  token = var.hcloud_token
+
+}    hcloud = {  required_providers {
+
+
+
+# Create or manage firewall      source  = "hetznercloud/hcloud"    hcloud = {
+
+resource "hcloud_firewall" "vpn_services" {
+
+  name = var.firewall_name      version = "1.60.1"      source  = "hetznercloud/hcloud"
+
+
+
+  rule {    }      version = "1.60.1"
+
+    direction = "in"
+
+    protocol  = "tcp"  }    }
+
+    port      = "22"
+
+    source_ips = [}  }
+
+      "0.0.0.0/0",
+
+      "::/0"}
+
+    ]
+
+  }provider "hcloud" {
+
+
+
+  rule {  token = var.hcloud_tokenprovider "hcloud" {
+
+    direction = "in"
+
+    protocol  = "tcp"}  token = var.hcloud_token # Hetzner Cloud API token
+
+    port      = "80"
+
+    source_ips = [}
+
+      "0.0.0.0/0",
+
+      "::/0"data "hcloud_firewall" "existing" {
+
+    ]
+
+  }  name = var.firewall_name# Data block to retrieve the existing firewall by name
+
+
+
+  rule {}data "hcloud_firewall" "existing" {
+
+    direction = "in"
+
+    protocol  = "tcp"  name = var.firewall_name # Firewall name to attach
+
+    port      = "8080"
+
+    source_ips = [resource "hcloud_server" "vm" {}
+
+      "0.0.0.0/0",
+
+      "::/0"  name        = "vpn-services-server"
+
+    ]
+
+  }  server_type = "cx22"# Hetzner Cloud VM resource with WireGuard pre-installed
+
+
+
+  rule {  image       = "ubuntu-24.04"resource "hcloud_server" "vm" {
+
+    direction = "in"
+
+    protocol  = "udp"  location    = "nbg1"  name        = "wireguard-vpn-server"
+
+    port      = "51820"
+
+    source_ips = [  server_type = "cx23"
+
+      "0.0.0.0/0",
+
+      "::/0"  public_net {  image       = "wireguard" # Pre-configured WireGuard image from Hetzner
+
+    ]
+
+  }    ipv4_enabled = true  location    = "nbg1"
+
 }
-
-provider "hcloud" {
-
-  token = var.hcloud_tokenprovider "hcloud" {
-
-}  token = var.hcloud_token # Hetzner Cloud API token
-
-}
-
-data "hcloud_firewall" "existing" {
-
-  name = var.firewall_name# Data block to retrieve the existing firewall by name
-
-}data "hcloud_firewall" "existing" {
-
-  name = var.firewall_name # Firewall name to attach
-
-resource "hcloud_server" "vm" {}
-
-  name        = "vpn-services-server"
-
-  server_type = "cx22"# Hetzner Cloud VM resource with WireGuard pre-installed
-
-  image       = "ubuntu-24.04"resource "hcloud_server" "vm" {
-
-  location    = "nbg1"  name        = "wireguard-vpn-server"
-
-  server_type = "cx23"
-
-  public_net {  image       = "wireguard" # Pre-configured WireGuard image from Hetzner
-
-    ipv4_enabled = true  location    = "nbg1"
 
     ipv6_enabled = true
 
-  }  public_net {
+# Create server
+
+resource "hcloud_server" "vm" {  }  public_net {
+
+  name        = "vpn-services-server"
+
+  server_type = "cx23"    ipv4_enabled = true
+
+  image       = "ubuntu-24.04"
+
+  location    = "nbg1"  firewall_ids = [data.hcloud_firewall.existing.id]    ipv6_enabled = true # WireGuard supports IPv6
+
+
+
+  public_net {  ssh_keys     = var.ssh_key_ids  }
 
     ipv4_enabled = true
 
-  firewall_ids = [data.hcloud_firewall.existing.id]    ipv6_enabled = true # WireGuard supports IPv6
+    ipv6_enabled = true
 
-  ssh_keys     = var.ssh_key_ids  }
-
-
+  }
 
   labels = {  firewall_ids = [data.hcloud_firewall.existing.id]
 
+  firewall_ids = [hcloud_firewall.vpn_services.id]
+
+  ssh_keys     = var.ssh_key_ids    app     = "vpn-services"
+
+
+
+  labels = {    managed = "terraform"  # SSH keys for root access (WireGuard image uses root initially)
+
     app     = "vpn-services"
 
-    managed = "terraform"  # SSH keys for root access (WireGuard image uses root initially)
+    managed = "terraform"  }  ssh_keys = var.ssh_key_ids
 
-  }  ssh_keys = var.ssh_key_ids
-
-}
-
-  labels = {
-
-output "public_ip" {    app     = "wireguard"
-
-  description = "The public IPv4 address of the VM"    managed = "terraform"
-
-  value       = hcloud_server.vm.ipv4_address  }
+  }
 
 }}
 
 
 
-output "public_ipv6" {# Output the public IPv4 address of the created VM
+# Outputs  labels = {
 
-  description = "The public IPv6 address of the VM"output "public_ip" {
+output "public_ip" {
 
-  value       = hcloud_server.vm.ipv6_address  description = "The public IPv4 address of the VM"
+  description = "The public IPv4 address of the VM"output "public_ip" {    app     = "wireguard"
 
-}  value       = hcloud_server.vm.ipv4_address
+  value       = hcloud_server.vm.ipv4_address
 
-  sensitive   = true
+}  description = "The public IPv4 address of the VM"    managed = "terraform"
 
-output "server_id" {}
 
-  description = "The server ID"
 
-  value       = hcloud_server.vm.id# Output the public IPv6 address of the created VM
-
-}output "public_ipv6" {
+output "public_ipv6" {  value       = hcloud_server.vm.ipv4_address  }
 
   description = "The public IPv6 address of the VM"
 
-variable "hcloud_token" {  value       = hcloud_server.vm.ipv6_address
+  value       = hcloud_server.vm.ipv6_address}}
 
-  description = "Hetzner Cloud API token"  sensitive   = true
+}
 
-  type        = string}
+
+
+output "server_id" {
+
+  description = "The server ID"output "public_ipv6" {# Output the public IPv4 address of the created VM
+
+  value       = hcloud_server.vm.id
+
+}  description = "The public IPv6 address of the VM"output "public_ip" {
+
+
+
+output "firewall_id" {  value       = hcloud_server.vm.ipv6_address  description = "The public IPv4 address of the VM"
+
+  description = "The firewall ID"
+
+  value       = hcloud_firewall.vpn_services.id}  value       = hcloud_server.vm.ipv4_address
+
+}
 
   sensitive   = true
+
+# Variables
+
+variable "hcloud_token" {output "server_id" {}
+
+  description = "Hetzner Cloud API token"
+
+  type        = string  description = "The server ID"
+
+  sensitive   = true
+
+}  value       = hcloud_server.vm.id# Output the public IPv6 address of the created VM
+
+
+
+variable "firewall_name" {}output "public_ipv6" {
+
+  description = "Name of the Hetzner firewall"
+
+  type        = string  description = "The public IPv6 address of the VM"
+
+  default     = "vpn-services-firewall"
+
+}variable "hcloud_token" {  value       = hcloud_server.vm.ipv6_address
+
+
+
+variable "ssh_key_ids" {  description = "Hetzner Cloud API token"  sensitive   = true
+
+  description = "List of SSH key IDs to add to the server"
+
+  type        = list(number)  type        = string}
+
+  default     = []
+
+}  sensitive   = true
+
 
 }# Output server ID for reference
 
