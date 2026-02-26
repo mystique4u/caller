@@ -267,7 +267,6 @@ jobs:
       needs.plan.result == 'success'
     environment:
       name: production
-      url: https://${{ secrets.DOMAIN_NAME }}
     defaults:
       run:
         working-directory: ./terraform
@@ -339,9 +338,9 @@ jobs:
     if: |
       always() &&
       needs.terraform.result == 'success' &&
+      needs.terraform.outputs.public_ip != '' &&
       github.event_name == 'workflow_dispatch' && 
       github.event.inputs.action == 'apply'
-    if: needs.terraform.outputs.public_ip != ''
     
     steps:
       - name: Checkout code
