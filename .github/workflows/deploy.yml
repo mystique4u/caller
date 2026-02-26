@@ -469,7 +469,14 @@ jobs:
         env:
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          LETSENCRYPT_ENV: ${{ secrets.LETSENCRYPT_ENV || 'production' }}
         run: |
+          echo "🔐 Let's Encrypt Environment: ${LETSENCRYPT_ENV}"
+          if [ "${LETSENCRYPT_ENV}" == "staging" ]; then
+            echo "⚠️ Using Let's Encrypt STAGING (test certificates - will show browser warnings)"
+          else
+            echo "✅ Using Let's Encrypt PRODUCTION (trusted certificates)"
+          fi
           ansible-playbook -i inventory.ini playbook.yml -v
 
   health-check:
