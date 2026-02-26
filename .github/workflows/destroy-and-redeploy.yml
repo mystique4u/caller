@@ -34,7 +34,6 @@ jobs:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
           TF_VAR_ssh_key_ids: ${{ secrets.SSH_KEY_IDS }}
-          TF_VAR_domain_name: "will-be-set-during-apply"
         run: terraform destroy -auto-approve
 
   deploy:
@@ -62,7 +61,6 @@ jobs:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
           TF_VAR_ssh_key_ids: ${{ secrets.SSH_KEY_IDS }}
-          TF_VAR_domain_name: "will-be-set-during-apply"
         run: terraform apply -auto-approve
 
       - name: Get Server IP
