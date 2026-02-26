@@ -126,9 +126,22 @@ jobs:
       - name: Check for Terraform best practices
         run: |
           echo "🔍 Checking Terraform best practices..."
-          # Check for missing descriptions
-          if grep -n "variable.*{" main.tf | grep -v "description"; then
-            echo "::warning::Some variables are missing descriptions"
+          # Check for variables without descriptions (look for variable blocks without description lines)
+          missing_desc=0
+          while IFS= read -r line; do
+            if echo "$line" | grep -q "^variable"; then
+              var_name=$(echo "$line" | sed -n 's/.*"\([^"]*\)".*/\1/p')
+              # Read ahead to check if description exists in the next few lines
+              context=$(grep -A 5 "^variable \"$var_name\"" main.tf)
+              if ! echo "$context" | grep -q "description"; then
+                echo "::warning::Variable '$var_name' is missing a description"
+                missing_desc=1
+              fi
+            fi
+          done < <(grep "^variable" main.tf)
+          
+          if [ $missing_desc -eq 0 ]; then
+            echo "✅ All variables have descriptions"
           fi
           echo "✅ Best practices check complete"
 
@@ -208,14 +221,27 @@ jobs:
         id: plan
         run: |
           echo "📋 Creating Terraform plan..."
-          terraform plan -detailed-exitcode -no-color -out=tfplan || export exitcode=$?
+          set +e  # Don't exit on error
+          terraform plan -detailed-exitcode -no-color -out=tfplan
+          exitcode=$?
+          set -e
+          
           echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
           
           # Save plan output for review
           terraform show -no-color tfplan > plan_output.txt 2>&1 || true
           
-          exit ${exitcode}
-        continue-on-error: true
+          # Exit codes: 0 = no changes, 1 = error, 2 = changes detected
+          if [ $exitcode -eq 0 ]; then
+            echo "✅ Plan successful - no changes needed"
+            exit 0
+          elif [ $exitcode -eq 2 ]; then
+            echo "✅ Plan successful - changes detected"
+            exit 0
+          else
+            echo "❌ Plan failed with error"
+            exit 1
+          fi
         
       - name: Upload Plan
         if: steps.plan.outputs.exitcode == '2'
@@ -230,21 +256,30 @@ jobs:
       - name: Create Plan Summary
         if: steps.plan.outputs.exitcode == '2'
         run: |
-          echo "## 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Terraform Plan Successful" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Infrastructure changes detected (this is expected)" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.event_name }}" == "push" ]; then
             echo "**Triggered by:** Push to main" >> $GITHUB_STEP_SUMMARY
             echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "Changes detected! Review the plan before applying:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changes Preview" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```terraform' >> $GITHUB_STEP_SUMMARY
           head -n 100 plan_output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.event_name }}" == "push" ]; then
-            echo "⚠️ **Note:** Automatic deployment is disabled. To deploy, run workflow manually with 'apply' action." >> $GITHUB_STEP_SUMMARY
+            echo "### 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To deploy these changes:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Review the plan above" >> $GITHUB_STEP_SUMMARY
+            echo "2. Go to Actions → Deploy Infrastructure" >> $GITHUB_STEP_SUMMARY
+            echo "3. Click 'Run workflow'" >> $GITHUB_STEP_SUMMARY
+            echo "4. Select action: **apply**" >> $GITHUB_STEP_SUMMARY
+            echo "5. Click 'Run workflow' button" >> $GITHUB_STEP_SUMMARY
           else
             echo "To apply these changes, trigger workflow with 'apply' action." >> $GITHUB_STEP_SUMMARY
           fi
@@ -252,17 +287,19 @@ jobs:
       - name: Plan Status
         run: |
           exitcode="${{ steps.plan.outputs.exitcode }}"
+          echo "Plan exit code: $exitcode (0=no changes, 2=changes detected, 1=error)"
+          
           if [ "$exitcode" == "0" ]; then
             echo "✅ No infrastructure changes detected"
             if [ "${{ github.event_name }}" == "push" ]; then
               echo "::notice::All checks passed. No infrastructure changes needed."
             fi
           elif [ "$exitcode" == "2" ]; then
-            echo "📋 Infrastructure changes detected - review plan before applying"
+            echo "✅ Plan completed successfully - infrastructure changes detected"
             if [ "${{ github.event_name }}" == "push" ]; then
-              echo "::notice::Changes detected on push. Review plan and manually trigger 'apply' to deploy."
+              echo "::notice::✅ Plan successful! Review the plan and manually trigger 'apply' to deploy."
             else
-              echo "::notice::Changes detected. Run workflow with 'apply' action to deploy."
+              echo "::notice::✅ Plan successful! Run workflow with 'apply' action to deploy."
             fi
           else
             echo "❌ Plan failed - check logs for details"
