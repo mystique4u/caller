@@ -1,304 +1,605 @@
-------
+---------
 
-- name: Setup VPN and Services Server- name: Configure WireGuard VPN Server
+- name: Setup VPN and Services Server
 
-  hosts: all  hosts: wireguard
+  hosts: all- name: Setup VPN and Services Server- name: Configure WireGuard VPN Server
 
-  become: yes  become: yes
+  become: yes
 
-  gather_facts: yes  gather_facts: yes
+  gather_facts: yes  hosts: all  hosts: wireguard
 
-  
 
-  vars:  vars:
 
-    server_ip: "{{ ansible_host }}"    wireguard_domain: "{{ lookup('env', 'WIREGUARD_DOMAIN') | default('', true) }}"
+  vars:  become: yes  become: yes
+
+    server_ip: "{{ ansible_host }}"
+
+    wireguard_port: 51820  gather_facts: yes  gather_facts: yes
+
+    wireguard_ui_version: "v0.6.2"
+
+      
+
+  tasks:
+
+    - name: Wait for server to be ready  vars:  vars:
+
+      wait_for_connection:
+
+        timeout: 300    server_ip: "{{ ansible_host }}"    wireguard_domain: "{{ lookup('env', 'WIREGUARD_DOMAIN') | default('', true) }}"
+
+        delay: 5
 
     wireguard_port: 51820    wireguard_admin_user: "{{ lookup('env', 'WIREGUARD_ADMIN_USER') | default('admin', true) }}"
 
-    wireguard_ui_version: "v0.6.2"    wireguard_admin_password: "{{ lookup('env', 'WIREGUARD_ADMIN_PASSWORD') }}"
+    - name: Update apt cache
 
-        
+      apt:    wireguard_ui_version: "v0.6.2"    wireguard_admin_password: "{{ lookup('env', 'WIREGUARD_ADMIN_PASSWORD') }}"
 
-  tasks:  tasks:
+        update_cache: yes
 
-    - name: Wait for server to be ready    - name: Wait for server to be ready
+        cache_valid_time: 3600        
 
-      wait_for_connection:      wait_for_connection:
 
-        timeout: 300        timeout: 300
 
-        delay: 5        delay: 5
+    - name: Install required packages  tasks:  tasks:
 
-      
+      apt:
 
-    - name: Update apt cache    - name: Update apt cache
+        name:    - name: Wait for server to be ready    - name: Wait for server to be ready
 
-      apt:      apt:
+          - apt-transport-https
 
-        update_cache: yes        update_cache: yes
+          - ca-certificates      wait_for_connection:      wait_for_connection:
 
-        cache_valid_time: 3600        cache_valid_time: 3600
+          - curl
 
-    
+          - gnupg        timeout: 300        timeout: 300
 
-    - name: Install required packages    - name: Clean up broken WireGuard UI user database
+          - lsb-release
 
-      apt:      shell: |
+          - software-properties-common        delay: 5        delay: 5
 
-        name:        if [ -f /usr/local/share/wireguard-ui/db/users/\$admin_username.json ]; then
+          - wireguard
 
-          - apt-transport-https          systemctl stop wireguard-ui
+          - wireguard-tools      
 
-          - ca-certificates          rm -f /usr/local/share/wireguard-ui/db/users/*.json
+          - iptables
+
+          - net-tools    - name: Update apt cache    - name: Update apt cache
+
+          - htop
+
+          - vim      apt:      apt:
+
+          - wget
+
+          - git        update_cache: yes        update_cache: yes
+
+          - python3-pip
+
+        state: present        cache_valid_time: 3600        cache_valid_time: 3600
+
+
+
+    # ========================================    
+
+    # Docker Installation
+
+    # ========================================    - name: Install required packages    - name: Clean up broken WireGuard UI user database
+
+    - name: Add Docker GPG key
+
+      apt_key:      apt:      shell: |
+
+        url: https://download.docker.com/linux/ubuntu/gpg
+
+        state: present        name:        if [ -f /usr/local/share/wireguard-ui/db/users/\$admin_username.json ]; then
+
+
+
+    - name: Add Docker repository          - apt-transport-https          systemctl stop wireguard-ui
+
+      apt_repository:
+
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"          - ca-certificates          rm -f /usr/local/share/wireguard-ui/db/users/*.json
+
+        state: present
 
           - curl          systemctl start wireguard-ui
 
-          - gnupg        fi
+    - name: Install Docker
 
-          - lsb-release      args:
+      apt:          - gnupg        fi
 
-          - software-properties-common        executable: /bin/bash
+        name:
 
-          - wireguard      
+          - docker-ce          - lsb-release      args:
+
+          - docker-ce-cli
+
+          - containerd.io          - software-properties-common        executable: /bin/bash
+
+          - docker-compose-plugin
+
+        state: present          - wireguard      
+
+        update_cache: yes
 
           - wireguard-tools    - name: Ensure WireGuard is running
 
-          - iptables      systemd:
+    - name: Start and enable Docker
 
-          - net-tools        name: wg-quick@wg0
+      systemd:          - iptables      systemd:
+
+        name: docker
+
+        state: started          - net-tools        name: wg-quick@wg0
+
+        enabled: yes
 
           - htop        state: started
 
-          - vim        enabled: yes
+    - name: Install Docker SDK for Python
 
-          - wget      ignore_errors: yes
+      pip:          - vim        enabled: yes
 
-          - git      
+        name:
 
-        state: present    - name: Check if WireGuard UI is installed
+          - docker          - wget      ignore_errors: yes
 
-      stat:
+          - docker-compose
 
-    # ========================================        path: /usr/local/bin/wireguard-ui
+        state: present          - git      
 
-    # Docker Installation      register: wireguard_ui_check
 
-    # ========================================      
 
-    - name: Add Docker GPG key    - name: Ensure WireGuard UI is running
+    # ========================================        state: present    - name: Check if WireGuard UI is installed
 
-      apt_key:      systemd:
+    # WireGuard Configuration
 
-        url: https://download.docker.com/linux/ubuntu/gpg        name: wireguard-ui
+    # ========================================      stat:
 
-        state: present        state: started
+    - name: Enable IP forwarding
 
-        enabled: yes
+      sysctl:    # ========================================        path: /usr/local/bin/wireguard-ui
 
-    - name: Add Docker repository      when: wireguard_ui_check.stat.exists
+        name: "{{ item }}"
 
-      apt_repository:      
+        value: '1'    # Docker Installation      register: wireguard_ui_check
 
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"    - name: Configure Caddy for HTTP on port 80
+        sysctl_set: yes
 
-        state: present      copy:
+        state: present    # ========================================      
 
-        content: |
+        reload: yes
+
+      loop:    - name: Add Docker GPG key    - name: Ensure WireGuard UI is running
+
+        - net.ipv4.ip_forward
+
+        - net.ipv6.conf.all.forwarding      apt_key:      systemd:
+
+
+
+    - name: Create WireGuard directory        url: https://download.docker.com/linux/ubuntu/gpg        name: wireguard-ui
+
+      file:
+
+        path: /etc/wireguard        state: present        state: started
+
+        state: directory
+
+        mode: '0700'        enabled: yes
+
+
+
+    - name: Generate WireGuard server private key    - name: Add Docker repository      when: wireguard_ui_check.stat.exists
+
+      shell: wg genkey
+
+      register: wg_private_key      apt_repository:      
+
+      changed_when: false
+
+      no_log: true        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"    - name: Configure Caddy for HTTP on port 80
+
+
+
+    - name: Generate WireGuard server public key        state: present      copy:
+
+      shell: echo "{{ wg_private_key.stdout }}" | wg pubkey
+
+      register: wg_public_key        content: |
+
+      changed_when: false
 
     - name: Install Docker          # Listen on HTTP port 80 (no HTTPS for IP addresses)
 
-      apt:          :80 {
+    - name: Create WireGuard server configuration
 
-        name:            reverse_proxy [::1]:5000
+      copy:      apt:          :80 {
 
-          - docker-ce          }
+        content: |
 
-          - docker-ce-cli        dest: /etc/caddy/Caddyfile
+          [Interface]        name:            reverse_proxy [::1]:5000
 
-          - containerd.io        owner: root
+          Address = 10.0.0.1/24
 
-          - docker-compose-plugin        group: root
+          ListenPort = {{ wireguard_port }}          - docker-ce          }
 
-        state: present        mode: '0644'
+          PrivateKey = {{ wg_private_key.stdout }}
 
-        update_cache: yes      register: caddy_config_changed
+                    - docker-ce-cli        dest: /etc/caddy/Caddyfile
 
-      
+          # NAT for client traffic
 
-    - name: Start and enable Docker    - name: Restart Caddy if config changed
+          PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; ip6tables -A FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE          - containerd.io        owner: root
 
-      systemd:      systemd:
+          PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; ip6tables -D FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 
-        name: docker        name: caddy
+        dest: /etc/wireguard/wg0.conf          - docker-compose-plugin        group: root
 
-        state: started        state: restarted
+        mode: '0600'
 
-        enabled: yes        enabled: yes
+      no_log: true        state: present        mode: '0644'
+
+
+
+    - name: Start and enable WireGuard        update_cache: yes      register: caddy_config_changed
+
+      systemd:
+
+        name: wg-quick@wg0      
+
+        state: started
+
+        enabled: yes    - name: Start and enable Docker    - name: Restart Caddy if config changed
+
+
+
+    # ========================================      systemd:      systemd:
+
+    # Docker Compose for Services
+
+    # ========================================        name: docker        name: caddy
+
+    - name: Create docker compose directory
+
+      file:        state: started        state: restarted
+
+        path: /opt/services
+
+        state: directory        enabled: yes        enabled: yes
+
+        mode: '0755'
 
       when: caddy_config_changed.changed
 
-    - name: Install Docker SDK for Python      
+    - name: Create service directories
 
-      pip:    - name: Ensure Caddy is running
+      file:    - name: Install Docker SDK for Python      
 
-        name:      systemd:
+        path: "{{ item }}"
 
-          - docker        name: caddy
+        state: directory      pip:    - name: Ensure Caddy is running
 
-          - docker-compose        state: started
+        mode: '0755'
 
-        state: present        enabled: yes
+      loop:        name:      systemd:
 
-    
+        - /opt/services/wireguard-ui
 
-    # ========================================    - name: Restart WireGuard UI and Caddy to ensure proper session handling
+        - /opt/services/galene/groups          - docker        name: caddy
+
+        - /opt/services/galene/data
+
+        - /opt/services/traefik/dynamic          - docker-compose        state: started
+
+
+
+    - name: Create Traefik static configuration        state: present        enabled: yes
+
+      copy:
+
+        content: |    
+
+          [global]
+
+            checkNewVersion = false    # ========================================    - name: Restart WireGuard UI and Caddy to ensure proper session handling
+
+            sendAnonymousUsage = false
 
     # WireGuard Configuration      systemd:
 
-    # ========================================        name: "{{ item }}"
+          [api]
+
+            dashboard = true    # ========================================        name: "{{ item }}"
+
+            insecure = true
 
     - name: Enable IP forwarding        state: restarted
 
-      sysctl:      loop:
+          [entryPoints]
+
+            [entryPoints.web]      sysctl:      loop:
+
+              address = ":80"
 
         name: "{{ item }}"        - wireguard-ui
 
-        value: '1'        - caddy
+          [providers]
 
-        sysctl_set: yes      when: wireguard_ui_check.stat.exists
+            [providers.docker]        value: '1'        - caddy
 
-        state: present      
+              endpoint = "unix:///var/run/docker.sock"
 
-        reload: yes    - name: Install useful packages
+              exposedByDefault = false        sysctl_set: yes      when: wireguard_ui_check.stat.exists
+
+
+
+          [log]        state: present      
+
+            level = "INFO"
+
+        dest: /opt/services/traefik/traefik.toml        reload: yes    - name: Install useful packages
+
+        mode: '0644'
 
       loop:      apt:
 
-        - net.ipv4.ip_forward        name:
+    - name: Create Docker Compose file
 
-        - net.ipv6.conf.all.forwarding          - htop
+      copy:        - net.ipv4.ip_forward        name:
 
-          - vim
+        content: |
 
-    - name: Create WireGuard directory          - curl
+          services:        - net.ipv6.conf.all.forwarding          - htop
 
-      file:          - wget
+            traefik:
 
-        path: /etc/wireguard          - net-tools
+              image: traefik:v2.11          - vim
 
-        state: directory          - ufw
+              container_name: traefik
 
-        mode: '0700'        state: present
+              restart: unless-stopped    - name: Create WireGuard directory          - curl
+
+              ports:
+
+                - "80:80"      file:          - wget
+
+                - "8080:8080"
+
+              volumes:        path: /etc/wireguard          - net-tools
+
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+
+                - /opt/services/traefik/traefik.toml:/etc/traefik/traefik.toml:ro        state: directory          - ufw
+
+                - /opt/services/traefik/dynamic:/etc/traefik/dynamic:ro
+
+              networks:        mode: '0700'        state: present
+
+                - services
 
         
 
-    - name: Generate WireGuard server private key    - name: Display WireGuard status
+            wireguard-ui:
 
-      shell: wg genkey      command: wg show
+              image: ngoduykhanh/wireguard-ui:{{ wireguard_ui_version }}    - name: Generate WireGuard server private key    - name: Display WireGuard status
 
-      register: wg_private_key      register: wg_status
+              container_name: wireguard-ui
 
-      changed_when: false      changed_when: false
+              restart: unless-stopped      shell: wg genkey      command: wg show
 
-      no_log: true      failed_when: false
+              cap_add:
 
-      
+                - NET_ADMIN      register: wg_private_key      register: wg_status
 
-    - name: Generate WireGuard server public key    - name: Show WireGuard status
+              environment:
 
-      shell: echo "{{ wg_private_key.stdout }}" | wg pubkey      debug:
+                - WGUI_USERNAME=admin      changed_when: false      changed_when: false
 
-      register: wg_public_key        var: wg_status.stdout_lines
+                - WGUI_PASSWORD=admin
 
-      changed_when: false      when: wg_status.rc == 0
+                - WGUI_ENDPOINT_ADDRESS={{ server_ip }}      no_log: true      failed_when: false
 
-      
+                - WGUI_DNS=1.1.1.1,1.0.0.1
 
-    - name: Create WireGuard server configuration    - name: Display server information
+                - WGUI_MTU=1420      
 
-      copy:      debug:
+                - WGUI_PERSISTENT_KEEPALIVE=25
 
-        content: |        msg:
+                - WGUI_SERVER_INTERFACE_ADDRESSES=10.0.0.1/24    - name: Generate WireGuard server public key    - name: Show WireGuard status
+
+                - WGUI_SERVER_LISTEN_PORT={{ wireguard_port }}
+
+                - WGUI_SERVER_POST_UP_SCRIPT=iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE      shell: echo "{{ wg_private_key.stdout }}" | wg pubkey      debug:
+
+                - WGUI_SERVER_POST_DOWN_SCRIPT=iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+              volumes:      register: wg_public_key        var: wg_status.stdout_lines
+
+                - /opt/services/wireguard-ui:/app/db
+
+                - /etc/wireguard:/etc/wireguard      changed_when: false      when: wg_status.rc == 0
+
+              networks:
+
+                - services      
+
+              labels:
+
+                - "traefik.enable=true"    - name: Create WireGuard server configuration    - name: Display server information
+
+                - "traefik.http.routers.wireguard.rule=Host(`{{ server_ip }}`) && PathPrefix(`/wireguard`)"
+
+                - "traefik.http.routers.wireguard.entrypoints=web"      copy:      debug:
+
+                - "traefik.http.services.wireguard.loadbalancer.server.port=5000"
+
+                - "traefik.http.middlewares.wireguard-strip.stripprefix.prefixes=/wireguard"        content: |        msg:
+
+                - "traefik.http.routers.wireguard.middlewares=wireguard-strip"
 
           [Interface]          - "WireGuard VPN Server is ready!"
 
-          Address = 10.0.0.1/24          - "Access WireGuard UI at: http://{{ ansible_host }}"
+            galene:
 
-          ListenPort = {{ wireguard_port }}          - "Complete the initial setup wizard to create your admin account"
+              image: ghcr.io/galene/galene:latest          Address = 10.0.0.1/24          - "Access WireGuard UI at: http://{{ ansible_host }}"
 
-          PrivateKey = {{ wg_private_key.stdout }}          - "Remember to configure your domain DNS if using one"
+              container_name: galene
 
-          
-          # NAT for client traffic
-          PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; ip6tables -A FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-          PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; ip6tables -D FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-        dest: /etc/wireguard/wg0.conf
-        mode: '0600'
-      no_log: true
+              restart: unless-stopped          ListenPort = {{ wireguard_port }}          - "Complete the initial setup wizard to create your admin account"
 
-    - name: Start and enable WireGuard
-      systemd:
+              command: ["-http", "0.0.0.0:8443", "-insecure"]
+
+              volumes:          PrivateKey = {{ wg_private_key.stdout }}          - "Remember to configure your domain DNS if using one"
+
+                - /opt/services/galene/groups:/opt/galene/groups
+
+                - /opt/services/galene/data:/opt/galene/data          
+
+              networks:          # NAT for client traffic
+
+                - services          PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; ip6tables -A FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+              labels:          PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; ip6tables -D FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+                - "traefik.enable=true"        dest: /etc/wireguard/wg0.conf
+
+                - "traefik.http.routers.galene.rule=Host(`{{ server_ip }}`) && PathPrefix(`/galene`)"        mode: '0600'
+
+                - "traefik.http.routers.galene.entrypoints=web"      no_log: true
+
+                - "traefik.http.services.galene.loadbalancer.server.port=8443"
+
+                - "traefik.http.middlewares.galene-strip.stripprefix.prefixes=/galene"    - name: Start and enable WireGuard
+
+                - "traefik.http.routers.galene.middlewares=galene-strip"      systemd:
+
         name: wg-quick@wg0
-        state: started
-        enabled: yes
 
-    # ========================================
-    # Docker Compose for Services
-    # ========================================
+          networks:        state: started
+
+            services:        enabled: yes
+
+              name: services_network
+
+              driver: bridge    # ========================================
+
+        dest: /opt/services/docker-compose.yml    # Docker Compose for Services
+
+        mode: '0644'    # ========================================
+
     - name: Create docker compose directory
-      file:
-        path: /opt/services
-        state: directory
-        mode: '0755'
 
-    - name: Create service directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      loop:
-        - /opt/services/wireguard-ui
+    - name: Create Galène default group configuration      file:
+
+      copy:        path: /opt/services
+
+        content: |        state: directory
+
+          {        mode: '0755'
+
+            "op": [{"password": "admin"}],
+
+            "presenter": [{}],    - name: Create service directories
+
+            "public": true,      file:
+
+            "description": "Public meeting room",        path: "{{ item }}"
+
+            "allow-recording": true        state: directory
+
+          }        mode: '0755'
+
+        dest: /opt/services/galene/groups/public.json      loop:
+
+        mode: '0644'        - /opt/services/wireguard-ui
+
         - /opt/services/galene/groups
-        - /opt/services/galene/data
-        - /opt/services/traefik/dynamic
 
-    - name: Create Traefik static configuration
-      copy:
-        content: |
-          [global]
+    - name: Pull and start Docker services        - /opt/services/galene/data
+
+      shell: |        - /opt/services/traefik/dynamic
+
+        cd /opt/services
+
+        docker compose pull    - name: Create Traefik static configuration
+
+        docker compose up -d      copy:
+
+      args:        content: |
+
+        executable: /bin/bash          [global]
+
             checkNewVersion = false
-            sendAnonymousUsage = false
 
-          [api]
-            dashboard = true
-            insecure = true
+    - name: Wait for services to be ready            sendAnonymousUsage = false
 
-          [entryPoints]
-            [entryPoints.web]
-              address = ":80"
+      wait_for:
 
-          [providers]
-            [providers.docker]
-              endpoint = "unix:///var/run/docker.sock"
-              exposedByDefault = false
+        port: "{{ item }}"          [api]
+
+        host: 127.0.0.1            dashboard = true
+
+        timeout: 60            insecure = true
+
+        delay: 5
+
+      loop:          [entryPoints]
+
+        - 80            [entryPoints.web]
+
+        - 8080              address = ":80"
+
+
+
+    - name: Display WireGuard status          [providers]
+
+      command: wg show            [providers.docker]
+
+      register: wg_status              endpoint = "unix:///var/run/docker.sock"
+
+      changed_when: false              exposedByDefault = false
+
+      failed_when: false
 
           [log]
-            level = "INFO"
-        dest: /opt/services/traefik/traefik.toml
-        mode: '0644'
 
-    - name: Create Docker Compose file
-      copy:
-        content: |
-          services:
-            traefik:
-              image: traefik:v2.11
-              container_name: traefik
-              restart: unless-stopped
-              ports:
-                - "80:80"
-                - "8080:8080"
-              volumes:
+    - name: Show server information            level = "INFO"
+
+      debug:        dest: /opt/services/traefik/traefik.toml
+
+        msg:        mode: '0644'
+
+          - "=============================================="
+
+          - "VPN and Services Server is Ready!"    - name: Create Docker Compose file
+
+          - "=============================================="      copy:
+
+          - "Server IP: {{ server_ip }}"        content: |
+
+          - ""          services:
+
+          - "Services:"            traefik:
+
+          - "  - Traefik Dashboard: http://{{ server_ip }}:8080/dashboard/"              image: traefik:v2.11
+
+          - "  - WireGuard UI: http://{{ server_ip }}/wireguard"              container_name: traefik
+
+          - "    Default login: admin / admin"              restart: unless-stopped
+
+          - "  - Galène Video: http://{{ server_ip }}/galene"              ports:
+
+          - "    Room: public (operator password: admin)"                - "80:80"
+
+          - ""                - "8080:8080"
+
+          - "=============================================="              volumes:
+
                 - /var/run/docker.sock:/var/run/docker.sock:ro
                 - /opt/services/traefik/traefik.toml:/etc/traefik/traefik.toml:ro
                 - /opt/services/traefik/dynamic:/etc/traefik/dynamic:ro
