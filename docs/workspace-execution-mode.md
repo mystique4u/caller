@@ -1,6 +1,7 @@
 # Terraform Cloud Workspace Configuration
 
 ## ✅ Your Current Status:
+
 - Organization: **itin** - EXISTS ✅
 - Workspace: **hetznercloud** - EXISTS ✅
 - Execution Mode: **Need to verify/configure** ⚙️
@@ -10,6 +11,7 @@
 ## 🔧 Configure Workspace Settings
 
 ### Step 1: Open Your Workspace
+
 Go to: https://app.terraform.io/app/itin/workspaces/hetznercloud/settings/general
 
 ---
@@ -19,27 +21,33 @@ Go to: https://app.terraform.io/app/itin/workspaces/hetznercloud/settings/genera
 You'll see a setting called **"Execution Mode"** with these options:
 
 #### Option A: **Local** (Recommended for GitHub Actions) ✅
+
 ```
 Description: "Terraform runs on your own infrastructure"
 ```
+
 - **Choose this one!**
 - Terraform runs in GitHub Actions (on GitHub's servers)
 - Terraform Cloud only stores the state
 - Variables defined in Terraform Cloud are used
 - This is what you want for your setup
 
-#### Option B: **Remote** 
+#### Option B: **Remote**
+
 ```
 Description: "Terraform runs on Terraform Cloud's infrastructure"
 ```
+
 - Don't choose this
 - Terraform would run on Terraform Cloud servers
 - Not compatible with your GitHub Actions setup
 
 #### Option C: **Agent**
+
 ```
 Description: "Terraform runs on your own custom agents"
 ```
+
 - Don't choose this
 - Advanced enterprise feature
 
@@ -80,6 +88,7 @@ When you go to workspace settings, you should see:
 ## 🎯 What "Local" / "CLI-driven" Means:
 
 **Local Execution (CLI-driven workflow):**
+
 - You (or GitHub Actions) run `terraform plan` and `terraform apply`
 - Commands execute on your machine or GitHub Actions runners
 - Terraform Cloud stores the state file remotely
@@ -87,6 +96,7 @@ When you go to workspace settings, you should see:
 - You control when Terraform runs
 
 **vs Remote Execution (VCS-driven workflow):**
+
 - Terraform Cloud runs everything automatically
 - Watches your GitHub repo for changes
 - Runs plans/applies on Terraform Cloud servers

@@ -16,12 +16,14 @@ Configuration is valid and properly formatted!
 Configure these 5 secrets before deploying:
 
 ### Secret #1: TF_API_TOKEN
+
 - **Purpose**: Terraform Cloud authentication
 - **Get from**: https://app.terraform.io/app/settings/tokens
 - **Format**: Long alphanumeric string
 - **Status**: ⚠️ UPDATE REQUIRED
 
-### Secret #2: HCLOUD_TOKEN  
+### Secret #2: HCLOUD_TOKEN
+
 - **Purpose**: Hetzner Cloud API access
 - **Get from**: https://console.hetzner.cloud/ → Security → API Tokens
 - **Format**: Long alphanumeric string
@@ -29,17 +31,20 @@ Configure these 5 secrets before deploying:
 - **Status**: ⚠️ CHECK IF CURRENT
 
 ### Secret #3: FIREWALL_NAME
+
 - **Purpose**: Firewall identifier (auto-created)
 - **Value**: `vpn-services-firewall`
 - **Status**: ⚠️ MUST UPDATE from `default-firewall`
 
 ### Secret #4: SSH_KEY_IDS
+
 - **Purpose**: SSH key for server access
 - **Value**: `[108153935]`
 - **Format**: JSON array
 - **Status**: ⚠️ CHECK IF CURRENT
 
 ### Secret #5: SSH_PRIVATE_KEY
+
 - **Purpose**: Ansible authentication
 - **Get from**: `cat ~/.ssh/hetzner-wireguard`
 - **Format**: Full private key with headers
@@ -50,11 +55,13 @@ Configure these 5 secrets before deploying:
 ## Quick Setup Commands
 
 ### Check your SSH key ID:
+
 ```bash
 hcloud ssh-key list
 ```
 
 ### View your private key:
+
 ```bash
 cat ~/.ssh/hetzner-wireguard
 ```
@@ -66,7 +73,7 @@ cat ~/.ssh/hetzner-wireguard
 ✅ **Firewall automated** - Created by Terraform (no manual setup)  
 ✅ **CX23 instance** - Upgraded to 8GB RAM  
 ✅ **All config in secrets** - No hardcoded values  
-✅ **Terraform validated** - Syntax check passed  
+✅ **Terraform validated** - Syntax check passed
 
 ---
 
@@ -84,7 +91,7 @@ cat ~/.ssh/hetzner-wireguard
 Services will be available at:
 
 - **WireGuard UI**: `http://YOUR_IP/wireguard` (admin/admin)
-- **Galène Video**: `http://YOUR_IP/galene` (room: public)  
+- **Galène Video**: `http://YOUR_IP/galene` (room: public)
 - **Traefik Dashboard**: `http://YOUR_IP:8080/dashboard/`
 
 **⚠️ Change default passwords immediately!**

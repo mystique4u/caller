@@ -15,6 +15,7 @@
 ```
 
 The script will:
+
 - ✅ Create a new SSH key pair
 - ✅ Display your public key
 - ✅ Show you exactly what to do next
@@ -35,6 +36,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/hetzner-wireguard -C "your-email@example.com"
 ```
 
 **What the options mean:**
+
 - `-t ed25519` = Use modern, secure Ed25519 algorithm
 - `-f ~/.ssh/hetzner-wireguard` = File name for your key
 - `-C "email"` = Comment to identify the key
@@ -47,6 +49,7 @@ cat ~/.ssh/hetzner-wireguard.pub
 ```
 
 **Copy the entire output** - it looks like:
+
 ```
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJl3dIa... your-email@example.com
 ```
@@ -68,6 +71,7 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJl3dIa... your-email@example.com
 If you have several local SSH keys and want to use specific ones:
 
 ### List Your Existing Keys
+
 ```bash
 # See all your SSH keys
 ls -la ~/.ssh/*.pub
@@ -102,6 +106,7 @@ Then add it to Hetzner Console as shown above.
 After adding your key to Hetzner and getting the ID:
 
 **Edit `terraform/terraform.tfvars`:**
+
 ```hcl
 # Single key
 ssh_key_ids = [12345678]
@@ -115,19 +120,21 @@ ssh_key_ids = [12345678, 87654321, 11223344]
 **Add to GitHub Secrets:**
 
 1. **`SSH_KEY_IDS`** (the Hetzner key IDs)
+
    ```json
    [12345678, 87654321]
    ```
 
 2. **`SSH_PRIVATE_KEY`** (your private key for Ansible to connect)
+
    ```bash
    # Copy your private key content
    cat ~/.ssh/hetzner-wireguard
-   
+
    # Or use your default key
    cat ~/.ssh/id_ed25519
    ```
-   
+
    Paste the **entire content** (including BEGIN and END lines) into GitHub Secret.
 
 ---
@@ -135,16 +142,17 @@ ssh_key_ids = [12345678, 87654321, 11223344]
 ## 🔐 SSH Key Best Practices
 
 ### ✅ DO:
+
 - **Use different keys for different purposes**
   - `~/.ssh/id_ed25519` - Default/personal
   - `~/.ssh/work_rsa` - Work
   - `~/.ssh/hetzner-wireguard` - Hetzner VPN
-  
 - **Use strong passphrases** on private keys
 - **Keep private keys secure** (never share or commit to git)
 - **Add all relevant keys** to Hetzner (work + personal laptops)
 
 ### ❌ DON'T:
+
 - Share private keys (files WITHOUT .pub extension)
 - Commit private keys to git
 - Use the same key everywhere
@@ -171,6 +179,7 @@ Host *.hetzner.cloud
 ```
 
 Then connect easily:
+
 ```bash
 ssh wireguard-vpn
 ```
@@ -179,13 +188,14 @@ ssh wireguard-vpn
 
 ## 📋 Quick Reference
 
-| Item | File Location | Use |
-|------|--------------|-----|
-| **Private Key** | `~/.ssh/hetzner-wireguard` | Keep secret, use for SSH connections |
-| **Public Key** | `~/.ssh/hetzner-wireguard.pub` | Add to Hetzner Console |
-| **Key ID** | From Hetzner Console | Use in `terraform.tfvars` |
+| Item            | File Location                  | Use                                  |
+| --------------- | ------------------------------ | ------------------------------------ |
+| **Private Key** | `~/.ssh/hetzner-wireguard`     | Keep secret, use for SSH connections |
+| **Public Key**  | `~/.ssh/hetzner-wireguard.pub` | Add to Hetzner Console               |
+| **Key ID**      | From Hetzner Console           | Use in `terraform.tfvars`            |
 
 ### Commands Cheat Sheet
+
 ```bash
 # Create new key
 ssh-keygen -t ed25519 -f ~/.ssh/hetzner-wireguard -C "email@example.com"

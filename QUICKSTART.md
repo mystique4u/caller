@@ -20,15 +20,18 @@ You only need to update **ONE** secret:
 ## What Changed?
 
 ✅ **Firewall is now managed by Terraform**
+
 - No manual `hcloud firewall` commands needed
 - Firewall created automatically during deployment
 - Can be destroyed and recreated via GitHub Actions
 
 ✅ **Upgraded to CX23**
+
 - 8GB RAM (was 4GB)
 - Better performance for video conferencing
 
 ✅ **Galène video conferencing added**
+
 - Docker-based installation
 - Follows official Galène documentation
 - Access at `http://YOUR_IP/galene`
@@ -43,6 +46,7 @@ After updating the secret:
 4. Wait ~10 minutes
 
 You'll get a fresh server with:
+
 - WireGuard VPN + UI
 - Galène video conferencing
 - Traefik reverse proxy

@@ -14,15 +14,15 @@ echo ""
 read -p "Are these correct? (y/n): " CORRECT
 
 if [ "$CORRECT" != "y" ]; then
-    read -p "Enter your organization name: " ORG_NAME
-    read -p "Enter your workspace name: " WORKSPACE_NAME
-    
-    echo ""
-    echo "⚠️  You need to update terraform/main.tf with:"
-    echo "   organization = \"$ORG_NAME\""
-    echo "   workspace name = \"$WORKSPACE_NAME\""
-    echo ""
-    exit 0
+	read -p "Enter your organization name: " ORG_NAME
+	read -p "Enter your workspace name: " WORKSPACE_NAME
+
+	echo ""
+	echo "⚠️  You need to update terraform/main.tf with:"
+	echo "   organization = \"$ORG_NAME\""
+	echo "   workspace name = \"$WORKSPACE_NAME\""
+	echo ""
+	exit 0
 fi
 
 echo ""
@@ -36,12 +36,12 @@ echo ""
 read -p "Have you created the API token? (y/n): " HAS_TOKEN
 
 if [ "$HAS_TOKEN" == "y" ]; then
-    echo ""
-    echo "✅ Great! Now add it to GitHub:"
-    echo "   Go to: https://github.com/mystique4u/caller/settings/secrets/actions"
-    echo "   Name: TF_API_TOKEN"
-    echo "   Value: <paste your token>"
-    echo ""
+	echo ""
+	echo "✅ Great! Now add it to GitHub:"
+	echo "   Go to: https://github.com/mystique4u/caller/settings/secrets/actions"
+	echo "   Name: TF_API_TOKEN"
+	echo "   Value: <paste your token>"
+	echo ""
 fi
 
 echo ""
@@ -76,27 +76,27 @@ echo ""
 read -p "Do you want to test Terraform Cloud login? (y/n): " TEST_LOGIN
 
 if [ "$TEST_LOGIN" == "y" ]; then
-    echo ""
-    echo "Running: terraform login"
-    echo ""
-    cd ../terraform
-    terraform login
-    
-    if [ $? -eq 0 ]; then
-        echo ""
-        echo "✅ Login successful!"
-        echo ""
-        echo "Testing backend initialization..."
-        terraform init
-        
-        if [ $? -eq 0 ]; then
-            echo ""
-            echo "✅ Backend initialized successfully!"
-            echo ""
-            echo "Checking workspace..."
-            terraform workspace list
-        fi
-    fi
+	echo ""
+	echo "Running: terraform login"
+	echo ""
+	cd ../terraform
+	terraform login
+
+	if [ $? -eq 0 ]; then
+		echo ""
+		echo "✅ Login successful!"
+		echo ""
+		echo "Testing backend initialization..."
+		terraform init
+
+		if [ $? -eq 0 ]; then
+			echo ""
+			echo "✅ Backend initialized successfully!"
+			echo ""
+			echo "Checking workspace..."
+			terraform workspace list
+		fi
+	fi
 fi
 
 echo ""

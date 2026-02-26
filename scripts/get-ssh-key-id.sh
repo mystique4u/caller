@@ -27,27 +27,27 @@ echo "--------------------------------------"
 echo ""
 
 # Check if hcloud is installed
-if command -v hcloud &> /dev/null; then
-    echo "✅ hcloud CLI is installed!"
-    echo ""
-    echo "Fetching your SSH keys..."
-    echo ""
-    hcloud ssh-key list
-    echo ""
-    echo "👆 The first column shows your SSH Key IDs"
+if command -v hcloud &>/dev/null; then
+	echo "✅ hcloud CLI is installed!"
+	echo ""
+	echo "Fetching your SSH keys..."
+	echo ""
+	hcloud ssh-key list
+	echo ""
+	echo "👆 The first column shows your SSH Key IDs"
 else
-    echo "⚠️  hcloud CLI is not installed."
-    echo ""
-    echo "To install:"
-    echo "  curl -L https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz | tar xz"
-    echo "  sudo mv hcloud /usr/local/bin/"
-    echo ""
-    echo "Then configure:"
-    echo "  hcloud context create my-project"
-    echo "  # Paste your API token when prompted"
-    echo ""
-    echo "And list keys:"
-    echo "  hcloud ssh-key list"
+	echo "⚠️  hcloud CLI is not installed."
+	echo ""
+	echo "To install:"
+	echo "  curl -L https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz | tar xz"
+	echo "  sudo mv hcloud /usr/local/bin/"
+	echo ""
+	echo "Then configure:"
+	echo "  hcloud context create my-project"
+	echo "  # Paste your API token when prompted"
+	echo ""
+	echo "And list keys:"
+	echo "  hcloud ssh-key list"
 fi
 
 echo ""

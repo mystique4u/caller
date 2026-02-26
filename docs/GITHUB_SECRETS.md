@@ -8,9 +8,11 @@ Configure these secrets in GitHub at:
 ---
 
 ## 1. TF_API_TOKEN
+
 **Purpose**: Terraform Cloud authentication for remote state storage
 
 **How to get it**:
+
 1. Go to https://app.terraform.io/app/settings/tokens
 2. Click "Create an API token"
 3. Name it: `github-actions-caller`
@@ -23,9 +25,11 @@ Configure these secrets in GitHub at:
 ---
 
 ## 2. HCLOUD_TOKEN
+
 **Purpose**: Hetzner Cloud API access for creating infrastructure
 
 **How to get it**:
+
 1. Go to https://console.hetzner.cloud/
 2. Select your project
 3. Go to **Security** → **API Tokens**
@@ -41,6 +45,7 @@ Configure these secrets in GitHub at:
 ---
 
 ## 3. FIREWALL_NAME
+
 **Purpose**: Name for the firewall (auto-created by Terraform)
 
 **Value**: `vpn-services-firewall`
@@ -50,9 +55,11 @@ Configure these secrets in GitHub at:
 ---
 
 ## 4. SSH_KEY_IDS
+
 **Purpose**: SSH key IDs for server access (as JSON array)
 
 **How to get it**:
+
 1. Your current SSH key ID is: `108153935`
 2. If you need to find it: `hcloud ssh-key list`
 
@@ -65,9 +72,11 @@ Configure these secrets in GitHub at:
 ---
 
 ## 5. SSH_PRIVATE_KEY
+
 **Purpose**: Private SSH key for Ansible to configure the server
 
 **How to get it**:
+
 ```bash
 cat ~/.ssh/hetzner-wireguard
 ```
@@ -75,6 +84,7 @@ cat ~/.ssh/hetzner-wireguard
 **Value format**: Full SSH private key including headers
 
 **Example**:
+
 ```
 -----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
@@ -84,7 +94,8 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
 -----END OPENSSH PRIVATE KEY-----
 ```
 
-**Important**: 
+**Important**:
+
 - Include BOTH header lines (`-----BEGIN...` and `-----END...`)
 - Include ALL lines in between
 - Do NOT add extra spaces or newlines
@@ -93,12 +104,12 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
 
 ## Quick Reference Table
 
-| Secret Name | Type | Example Value |
-|-------------|------|---------------|
-| `TF_API_TOKEN` | String | `TYBeJ4Gh8NK...` |
-| `HCLOUD_TOKEN` | String | `A1B2C3D4E5F6...` |
-| `FIREWALL_NAME` | String | `vpn-services-firewall` |
-| `SSH_KEY_IDS` | JSON Array | `[108153935]` |
+| Secret Name       | Type       | Example Value           |
+| ----------------- | ---------- | ----------------------- |
+| `TF_API_TOKEN`    | String     | `TYBeJ4Gh8NK...`        |
+| `HCLOUD_TOKEN`    | String     | `A1B2C3D4E5F6...`       |
+| `FIREWALL_NAME`   | String     | `vpn-services-firewall` |
+| `SSH_KEY_IDS`     | JSON Array | `[108153935]`           |
 | `SSH_PRIVATE_KEY` | Multi-line | `-----BEGIN OPENSSH...` |
 
 ---
@@ -127,15 +138,19 @@ After adding all secrets:
 ## Common Issues
 
 ### Issue: "Required token could not be found"
+
 **Solution**: Make sure `TF_API_TOKEN` is set correctly in GitHub Secrets
 
 ### Issue: "Invalid credentials" from Hetzner
+
 **Solution**: Regenerate `HCLOUD_TOKEN` with Read & Write permissions
 
 ### Issue: "No valid SSH key IDs"
+
 **Solution**: Verify `SSH_KEY_IDS` is valid JSON: `[108153935]`
 
 ### Issue: Ansible connection fails
+
 **Solution**: Check that `SSH_PRIVATE_KEY` includes full key with headers
 
 ---
