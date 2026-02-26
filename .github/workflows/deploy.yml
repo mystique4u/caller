@@ -38,7 +38,9 @@ jobs:
   code-quality:
     name: Code Quality Checks
     runs-on: ubuntu-latest
-    if: github.event.inputs.skip_validation != 'true'
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_validation != 'true')
     
     steps:
       - name: Checkout code
@@ -75,7 +77,9 @@ jobs:
   terraform-validate:
     name: Terraform Validation
     runs-on: ubuntu-latest
-    if: github.event.inputs.skip_validation != 'true'
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_validation != 'true')
     defaults:
       run:
         working-directory: ./terraform
@@ -124,7 +128,9 @@ jobs:
   security-scan:
     name: Security Scanning
     runs-on: ubuntu-latest
-    if: github.event.inputs.skip_validation != 'true'
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_validation != 'true')
     defaults:
       run:
         working-directory: ./terraform
@@ -219,22 +225,38 @@ jobs:
         run: |
           echo "## 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" == "push" ]; then
+            echo "**Triggered by:** Push to main" >> $GITHUB_STEP_SUMMARY
+            echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "Changes detected! Review the plan before applying:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```terraform' >> $GITHUB_STEP_SUMMARY
           head -n 100 plan_output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "To apply these changes, trigger workflow with 'apply' action." >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" == "push" ]; then
+            echo "⚠️ **Note:** Automatic deployment is disabled. To deploy, run workflow manually with 'apply' action." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "To apply these changes, trigger workflow with 'apply' action." >> $GITHUB_STEP_SUMMARY
+          fi
           
       - name: Plan Status
         run: |
           exitcode="${{ steps.plan.outputs.exitcode }}"
           if [ "$exitcode" == "0" ]; then
             echo "✅ No infrastructure changes detected"
+            if [ "${{ github.event_name }}" == "push" ]; then
+              echo "::notice::All checks passed. No infrastructure changes needed."
+            fi
           elif [ "$exitcode" == "2" ]; then
             echo "📋 Infrastructure changes detected - review plan before applying"
-            echo "::notice::Changes detected. Run workflow with 'apply' action to deploy."
+            if [ "${{ github.event_name }}" == "push" ]; then
+              echo "::notice::Changes detected on push. Review plan and manually trigger 'apply' to deploy."
+            else
+              echo "::notice::Changes detected. Run workflow with 'apply' action to deploy."
+            fi
           else
             echo "❌ Plan failed - check logs for details"
             exit 1
