@@ -317,6 +317,66 @@ jobs:
             exit 1
           fi
 
+  # Auto-deploy on push (no approval needed)
+  terraform-auto:
+    name: Terraform Apply (Auto on Push)
+    runs-on: ubuntu-latest
+    needs: plan
+    if: |
+      github.event_name == 'push' &&
+      needs.plan.result == 'success'
+    defaults:
+      run:
+        working-directory: ./terraform
+    
+    outputs:
+      public_ip: ${{ steps.terraform_output.outputs.public_ip }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          
+      - name: Terraform Init
+        run: |
+          echo "🔧 Initializing Terraform..."
+          terraform init
+        
+      - name: Download Plan (if available)
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: terraform/
+        continue-on-error: true
+        id: download_plan
+        
+      - name: Terraform Apply
+        id: apply
+        run: |
+          echo "🚀 Applying Terraform changes (auto-approved on push)..."
+          if [ -f "tfplan" ]; then
+            echo "✅ Using pre-generated plan from this workflow run"
+            terraform apply -auto-approve tfplan
+          else
+            echo "ℹ️ No plan artifact found, generating new plan and applying"
+            terraform apply -auto-approve -input=false
+          fi
+          echo "✅ Infrastructure deployed successfully"
+          
+      - name: Get Terraform Outputs
+        id: terraform_output
+        if: steps.apply.outcome == 'success'
+        run: |
+          PUBLIC_IP=$(terraform output -raw public_ip)
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "Server IP: $PUBLIC_IP"
+
   approval-gate:
     name: Deployment Approval Required
     runs-on: ubuntu-latest
@@ -343,7 +403,7 @@ jobs:
       github.event.inputs.action == 'apply' &&
       needs.plan.result == 'success'
     environment:
-      name: production
+      name: ${{ github.event_name == 'workflow_dispatch' && 'production' || '' }}
     defaults:
       run:
         working-directory: ./terraform
@@ -412,13 +472,13 @@ jobs:
   ansible:
     name: Configure Server
     runs-on: ubuntu-latest
-    needs: terraform
+    needs: [terraform, terraform-auto]
     if: |
       always() &&
-      needs.terraform.result == 'success' &&
-      needs.terraform.outputs.public_ip != '' &&
-      github.event_name == 'workflow_dispatch' && 
-      github.event.inputs.action == 'apply'
+      (
+        (needs.terraform.result == 'success' && needs.terraform.outputs.public_ip != '' && github.event_name == 'workflow_dispatch') ||
+        (needs.terraform-auto.result == 'success' && needs.terraform-auto.outputs.public_ip != '' && github.event_name == 'push')
+      )
     
     steps:
       - name: Checkout code
@@ -436,17 +496,19 @@ jobs:
           
       - name: Setup SSH key
         run: |
+          SERVER_IP="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ needs.terraform.outputs.public_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
           
       - name: Create dynamic inventory
         working-directory: ./ansible
         run: |
+          SERVER_IP="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           cat > inventory.ini << EOF
           [wireguard]
-          wireguard-vpn-server ansible_host=${{ needs.terraform.outputs.public_ip }}
+          wireguard-vpn-server ansible_host=$SERVER_IP
 
           [wireguard:vars]
           ansible_user=root
@@ -456,8 +518,9 @@ jobs:
           
       - name: Wait for SSH to be ready
         run: |
+          SERVER_IP="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           for i in {1..30}; do
-            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${{ needs.terraform.outputs.public_ip }} 'echo SSH is ready'; then
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@$SERVER_IP 'echo SSH is ready'; then
               echo "SSH connection established"
               break
             fi
@@ -483,7 +546,7 @@ jobs:
   health-check:
     name: Post-Deployment Health Checks
     runs-on: ubuntu-latest
-    needs: [terraform, ansible]
+    needs: [terraform, terraform-auto, ansible]
     if: |
       always() &&
       needs.ansible.result == 'success'
@@ -496,15 +559,17 @@ jobs:
           
       - name: Setup SSH key
         run: |
+          SERVER_IP="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ needs.terraform.outputs.public_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
           
       - name: Check Docker services on server
         run: |
+          SERVER_IP="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           echo "🔍 Checking Docker containers status..."
-          ssh -o StrictHostKeyChecking=no root@${{ needs.terraform.outputs.public_ip }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP << 'EOF'
             echo "=== Docker Container Status ==="
             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             echo ""
@@ -534,8 +599,9 @@ jobs:
           
       - name: Check Traefik routing and labels
         run: |
+          SERVER_IP="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           echo "🔍 Checking Traefik labels and configuration..."
-          ssh -o StrictHostKeyChecking=no root@${{ needs.terraform.outputs.public_ip }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP << 'EOF'
             echo "=== WireGuard UI Labels ==="
             docker inspect wireguard-ui --format='{{range $key, $value := .Config.Labels}}{{$key}}={{$value}}{{"\n"}}{{end}}' | grep traefik || echo "No Traefik labels found!"
             
@@ -563,12 +629,12 @@ jobs:
           dig +short "meet.$domain" || echo "⚠️ DNS not resolved yet"
           
           echo ""
-          echo "Expected IP: ${{ needs.terraform.outputs.public_ip }}"
+          echo "Expected IP: ${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           
       - name: Check HTTPS services
         run: |
           domain="${{ secrets.DOMAIN_NAME }}"
-          ip="${{ needs.terraform.outputs.public_ip }}"
+          ip="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           
           echo "🔍 Checking HTTPS endpoints..."
           
@@ -607,7 +673,7 @@ jobs:
       - name: Check WireGuard service
         run: |
           echo "🔍 Checking WireGuard VPN service..."
-          ip="${{ needs.terraform.outputs.public_ip }}"
+          ip="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           
           # Check if WireGuard port is open
           if nc -z -w5 -u "$ip" 51820 2>/dev/null; then
@@ -619,7 +685,7 @@ jobs:
       - name: Health Check Summary
         run: |
           domain="${{ secrets.DOMAIN_NAME }}"
-          ip="${{ needs.terraform.outputs.public_ip }}"
+          ip="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           
           echo "## 🎉 Deployment Health Check Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -642,7 +708,7 @@ jobs:
       - name: Display connection information
         run: |
           echo "🎉 WireGuard VPN Server deployed successfully!"
-          echo "📍 Server IP: ${{ needs.terraform.outputs.public_ip }}"
+          echo "📍 Server IP: ${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           echo "🌐 Domain: ${{ secrets.DOMAIN_NAME }}"
           echo "🔒 WireGuard UI: https://vpn.${{ secrets.DOMAIN_NAME }}"
           echo "📹 Galène Video: https://meet.${{ secrets.DOMAIN_NAME }}"
