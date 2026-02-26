@@ -1,69 +1,135 @@
-# WireGuard VPN on Hetzner Cloud
+# VPN & Services Server# WireGuard VPN on Hetzner Cloud
 
-Automated deployment of a WireGuard VPN server on Hetzner Cloud using Terraform, Ansible, and GitHub Actions.
 
-## 🎯 Overview
 
-This project automates the deployment of a WireGuard VPN server using:
-- **Terraform**: Infrastructure provisioning on Hetzner Cloud
-- **Ansible**: Server configuration and management
-- **GitHub Actions**: CI/CD pipeline for automated deployment
-- **WireGuard Image**: Pre-configured Hetzner image with WireGuard UI
+Fully automated deployment of WireGuard VPN, Galène video conferencing, and Traefik reverse proxy on Hetzner Cloud using Terraform and Ansible.Automated deployment of a WireGuard VPN server on Hetzner Cloud using Terraform, Ansible, and GitHub Actions.
+
+
+
+## 🚀 Features## 🎯 Overview
+
+
+
+- **WireGuard VPN** with Web UI for easy client managementThis project automates the deployment of a WireGuard VPN server using:
+
+- **Galène** - Lightweight video conferencing server  - **Terraform**: Infrastructure provisioning on Hetzner Cloud
+
+- **Traefik** - Modern reverse proxy with automatic routing- **Ansible**: Server configuration and management
+
+- **Docker-based** - All services run in containers- **GitHub Actions**: CI/CD pipeline for automated deployment
+
+- **Fully automated** - Zero manual configuration needed- **WireGuard Image**: Pre-configured Hetzner image with WireGuard UI
+
+- **IP-based access** - Works out of the box without domain setup
 
 ## 📋 Prerequisites
 
-### Required Accounts & Tools
-- Hetzner Cloud account ([sign up here](https://www.hetzner.com/cloud))
-- GitHub account (for Actions)
-- Domain name (optional but recommended for HTTPS)
+## 📋 Services & Access
 
-### Local Development Tools
-- [Terraform](https://www.terraform.io/downloads) >= 1.6.0
-- [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html) >= 2.14
+### Required Accounts & Tools
+
+After deployment, access your services at:- Hetzner Cloud account ([sign up here](https://www.hetzner.com/cloud))
+
+- GitHub account (for Actions)
+
+| Service | URL | Default Credentials |- Domain name (optional but recommended for HTTPS)
+
+|---------|-----|-------------------|
+
+| Traefik Dashboard | `http://YOUR_IP:8080/dashboard/` | No auth |### Local Development Tools
+
+| WireGuard UI | `http://YOUR_IP/wireguard` | `admin` / `admin` |- [Terraform](https://www.terraform.io/downloads) >= 1.6.0
+
+| Galène Video | `http://YOUR_IP/galene` | Room: `public`, Password: `admin` |- [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html) >= 2.14
+
 - SSH key pair
+
+## 🚦 Quick Start
 
 ## 🚀 Quick Start
 
-### 1. Initial Setup
+1. Push to `main` branch - automatic deployment starts
+
+2. Wait ~5 minutes for completion### 1. Initial Setup
+
+3. Access services using your server IP
 
 #### a) Create SSH Keys in Hetzner Cloud
-1. Go to [Hetzner Cloud Console](https://console.hetzner.cloud/)
-2. Navigate to **Security** → **SSH Keys**
-3. Add your SSH public key
-4. Note the SSH key ID (you'll need this)
 
-#### b) Create API Token
+## 📖 Full Documentation1. Go to [Hetzner Cloud Console](https://console.hetzner.cloud/)
+
+2. Navigate to **Security** → **SSH Keys**
+
+See detailed guides in `/docs`:3. Add your SSH public key
+
+- [Branch Protection Setup](docs/branch-protection.md)4. Note the SSH key ID (you'll need this)
+
+- [Terraform Cloud Setup](docs/terraform-cloud-setup.md)
+
+- [GitHub Secrets Configuration](docs/github-secrets-setup.md)#### b) Create API Token
+
 1. In Hetzner Console, go to **Security** → **API Tokens**
-2. Generate a new token with **Read & Write** permissions
+
+## 🔧 Prerequisites2. Generate a new token with **Read & Write** permissions
+
 3. Save it securely (you'll need this for GitHub Secrets)
 
-#### c) Create Firewall (Optional but Recommended)
-1. Go to **Firewalls** in Hetzner Console
-2. Create a new firewall with these rules:
+- Hetzner Cloud account with API token
+
+- Terraform Cloud account (free tier)#### c) Create Firewall (Optional but Recommended)
+
+- GitHub repository with Actions enabled1. Go to **Firewalls** in Hetzner Console
+
+- SSH key pair for server access2. Create a new firewall with these rules:
+
    - **Inbound:**
-     - SSH: TCP port 22 (from your IP or 0.0.0.0/0)
+
+## 🛠️ Manual Redeploy     - SSH: TCP port 22 (from your IP or 0.0.0.0/0)
+
      - HTTPS: TCP port 443 (from 0.0.0.0/0)
-     - WireGuard: UDP port 51820 (from 0.0.0.0/0)
-   - **Outbound:** Allow all
-3. Note the firewall name
+
+1. Go to **Actions** → **Destroy and Redeploy**     - WireGuard: UDP port 51820 (from 0.0.0.0/0)
+
+2. Click **Run workflow**   - **Outbound:** Allow all
+
+3. Type `DESTROY` to confirm3. Note the firewall name
+
+4. Wait for completion
 
 ### 2. Configure GitHub Secrets
 
+## ⚠️ Security Notes
+
 Add these secrets to your GitHub repository (**Settings** → **Secrets and variables** → **Actions**):
 
-| Secret Name | Description | Example |
-|-------------|-------------|---------|
+- Change default passwords immediately after deployment
+
+- Services use HTTP (not HTTPS) on IP addresses| Secret Name | Description | Example |
+
+- Configure a domain + Let's Encrypt for production use|-------------|-------------|---------|
+
 | `HCLOUD_TOKEN` | Your Hetzner Cloud API token | `your-api-token-here` |
-| `FIREWALL_NAME` | Name of your Hetzner firewall | `default-firewall` |
+
+## 📝 Infrastructure| `FIREWALL_NAME` | Name of your Hetzner firewall | `default-firewall` |
+
 | `SSH_KEY_IDS` | JSON array of SSH key IDs | `[123456]` |
-| `SSH_PRIVATE_KEY` | Your SSH private key (for Ansible) | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
-| `WIREGUARD_DOMAIN` | Your domain name (optional) | `vpn.example.com` |
-| `WIREGUARD_ADMIN_USER` | Admin username for UI (optional) | `admin` |
-| `WIREGUARD_ADMIN_PASSWORD` | Admin password (optional) | Leave empty for interactive setup |
 
-### 3. Deploy via GitHub Actions
+- **OS**: Clean Ubuntu 24.04| `SSH_PRIVATE_KEY` | Your SSH private key (for Ansible) | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
 
-#### Automatic Deployment
+- **Instance**: Hetzner CX22 (2 vCPU, 4GB RAM)| `WIREGUARD_DOMAIN` | Your domain name (optional) | `vpn.example.com` |
+
+- **Location**: Nuremberg (nbg1)| `WIREGUARD_ADMIN_USER` | Admin username for UI (optional) | `admin` |
+
+- **Firewall**: Ports 22, 80, 8080, 51820| `WIREGUARD_ADMIN_PASSWORD` | Admin password (optional) | Leave empty for interactive setup |
+
+
+
+## 🤝 Contributing### 3. Deploy via GitHub Actions
+
+
+
+Issues and PRs welcome!#### Automatic Deployment
+
 1. Push to the `main` branch:
    ```bash
    git add .
