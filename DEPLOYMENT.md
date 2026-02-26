@@ -197,28 +197,39 @@ The workflow will automatically run health checks:
 
 **Error:** `error during placement (resource_unavailable...)`
 
-**Cause:** The requested server type (CX23) is temporarily out of stock in the selected location (nbg1).
+**Cause:** The requested server type (CX23) is temporarily out of stock in the selected location.
+
+**Current Hetzner Status (as of Feb 2026):**
+- ⚠️ FSN1 (Falkenstein) - Limited availability
+- ⚠️ NBG1 (Nuremberg) - May have capacity issues
+- ✅ HEL1 (Helsinki) - Usually better availability
+- ✅ ASH (Ashburn, USA) - Alternative option
 
 **Solutions:**
 
-1. **Try a different location** (recommended):
+1. **Try Helsinki location** (recommended for Europe):
    ```bash
-   # Edit terraform/main.tf or add TF_VAR_server_location secret
-   # Available locations: nbg1 (Nuremberg), fsn1 (Falkenstein), hel1 (Helsinki), ash (Ashburn)
+   # Add GitHub Secret:
+   # Name: TF_VAR_server_location
+   # Value: hel1
    ```
-   
-   Add GitHub Secret:
-   - `TF_VAR_server_location` = `fsn1` (or `hel1`, `ash`)
    
    Then redeploy.
 
-2. **Wait and retry** (15-30 minutes):
+2. **Try Ashburn location** (if US location acceptable):
+   ```bash
+   # Add GitHub Secret:
+   # Name: TF_VAR_server_location
+   # Value: ash
+   ```
+
+3. **Wait and retry in NBG1** (15-60 minutes):
    - Server types frequently become available again
    - Check Hetzner status: https://status.hetzner.cloud/
 
-3. **Use different server type** (edit `terraform/main.tf`):
+4. **Use different server type** (edit `terraform/main.tf`):
    - `cx23` (2 vCPU, 8GB RAM) - recommended
-   - `cx33` (4 vCPU, 16GB RAM) - larger
+   - `cx33` (4 vCPU, 16GB RAM) - larger (usually better availability)
    - `cx21` (2 vCPU, 4GB RAM) - smaller (might be tight)
 
 ### Plan shows no changes but you made updates:
