@@ -79,15 +79,9 @@
         state: present
       ignore_errors: yes
 
-    - name: Install Docker SDK via pip with break-system-packages (fallback)
-      pip:
-        name:
-          - docker
-          - docker-compose
-        state: present
-        extra_args: --break-system-packages
-      when: ansible_distribution_version is version('24.04', '>=')
-      ignore_errors: yes
+    # Note: We don't need docker-compose Python package
+    # Docker Compose V2 is included with docker-compose-plugin
+    # The 'docker compose' command is available via the plugin
 
     # WireGuard Configuration
     - name: Enable IP forwarding
