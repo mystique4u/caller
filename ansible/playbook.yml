@@ -166,11 +166,9 @@
           [entryPoints]
             [entryPoints.web]
               address = ":80"
-              {% if use_https %}
               [entryPoints.web.http.redirections.entryPoint]
                 to = "websecure"
                 scheme = "https"
-              {% endif %}
 
             [entryPoints.websecure]
               address = ":443"
@@ -178,7 +176,6 @@
             [entryPoints.traefik]
               address = ":8080"
 
-          {% if use_https %}
           [certificatesResolvers.letsencrypt.acme]
             email = "{{ email_address }}"
             storage = "/acme/acme.json"
@@ -187,7 +184,6 @@
             {% endif %}
             [certificatesResolvers.letsencrypt.acme.httpChallenge]
               entryPoint = "web"
-          {% endif %}
 
           [providers]
             [providers.docker]
