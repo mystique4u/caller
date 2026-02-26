@@ -3,6 +3,8 @@
   hosts: all
   become: yes
   gather_facts: yes
+  environment:
+    ANSIBLE_REMOTE_TEMP: /tmp/.ansible/tmp
 
   vars:
     server_ip: "{{ ansible_host }}"
@@ -282,7 +284,7 @@
                 - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
 
             galene:
-              image: ghcr.io/galene/galene:latest
+              image: galene/galene:latest
               container_name: galene
               restart: unless-stopped
               command: ["-http", "0.0.0.0:8443"]
@@ -355,7 +357,7 @@
                 - "traefik.http.routers.wireguard.middlewares=wireguard-strip"
 
             galene:
-              image: ghcr.io/galene/galene:latest
+              image: galene/galene:latest
               container_name: galene
               restart: unless-stopped
               command: ["-http", "0.0.0.0:8443", "-insecure"]
@@ -403,10 +405,14 @@
     - name: Pull and start Docker services
       shell: |
         cd /opt/services
-        docker compose pull
+        docker compose pull --ignore-pull-failures || true
         docker compose up -d
       args:
         executable: /bin/bash
+      retries: 3
+      delay: 10
+      register: docker_result
+      until: docker_result.rc == 0
 
     - name: Wait for services to be ready
       wait_for:

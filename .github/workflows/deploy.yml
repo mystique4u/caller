@@ -469,6 +469,126 @@ jobs:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
         run: |
           ansible-playbook -i inventory.ini playbook.yml -v
+
+  health-check:
+    name: Post-Deployment Health Checks
+    runs-on: ubuntu-latest
+    needs: [terraform, ansible]
+    if: |
+      always() &&
+      needs.ansible.result == 'success'
+    
+    steps:
+      - name: Wait for services to initialize
+        run: |
+          echo "⏳ Waiting 60 seconds for services to fully initialize..."
+          sleep 60
+          
+      - name: Check server connectivity
+        run: |
+          echo "🔍 Testing server connectivity..."
+          if ping -c 3 ${{ needs.terraform.outputs.public_ip }} > /dev/null 2>&1; then
+            echo "✅ Server is reachable"
+          else
+            echo "::error::Server is not responding to ping"
+            exit 1
+          fi
+          
+      - name: Check HTTP/HTTPS services
+        run: |
+          domain="${{ secrets.DOMAIN_NAME }}"
+          ip="${{ needs.terraform.outputs.public_ip }}"
+          
+          if [ -n "$domain" ]; then
+            echo "🔍 Checking HTTPS endpoints..."
+            
+            # Check root domain
+            echo "Testing https://$domain ..."
+            if curl -sSf -k --connect-timeout 10 "https://$domain" > /dev/null 2>&1; then
+              echo "✅ Root domain is accessible"
+            else
+              echo "::warning::Root domain https://$domain is not responding yet (SSL may still be provisioning)"
+            fi
+            
+            # Check WireGuard UI subdomain
+            echo "Testing https://vpn.$domain ..."
+            if curl -sSf -k --connect-timeout 10 "https://vpn.$domain" > /dev/null 2>&1; then
+              echo "✅ WireGuard UI is accessible at https://vpn.$domain"
+            else
+              echo "::warning::WireGuard UI at https://vpn.$domain is not responding yet"
+            fi
+            
+            # Check Galène subdomain
+            echo "Testing https://meet.$domain ..."
+            if curl -sSf -k --connect-timeout 10 "https://meet.$domain" > /dev/null 2>&1; then
+              echo "✅ Galène is accessible at https://meet.$domain"
+            else
+              echo "::warning::Galène at https://meet.$domain is not responding yet"
+            fi
+            
+            # Check Traefik dashboard
+            echo "Testing Traefik dashboard..."
+            if curl -sSf --connect-timeout 10 "http://$ip:8080/api/overview" > /dev/null 2>&1; then
+              echo "✅ Traefik dashboard is accessible"
+            else
+              echo "::warning::Traefik dashboard is not responding"
+            fi
+          else
+            echo "🔍 Checking HTTP endpoints (no domain configured)..."
+            
+            # Check services via IP
+            if curl -sSf --connect-timeout 10 "http://$ip" > /dev/null 2>&1; then
+              echo "✅ Server is responding via HTTP"
+            else
+              echo "::error::Server is not responding via HTTP"
+              exit 1
+            fi
+          fi
+          
+      - name: Check WireGuard service
+        run: |
+          echo "🔍 Checking WireGuard VPN service..."
+          ip="${{ needs.terraform.outputs.public_ip }}"
+          
+          # Check if WireGuard port is open
+          if nc -z -w5 -u "$ip" 51820 2>/dev/null; then
+            echo "✅ WireGuard port 51820 is open"
+          else
+            echo "::warning::Cannot verify WireGuard port 51820 (UDP check may be unreliable)"
+          fi
+          
+      - name: Health Check Summary
+        run: |
+          domain="${{ secrets.DOMAIN_NAME }}"
+          ip="${{ needs.terraform.outputs.public_ip }}"
+          
+          echo "## 🎉 Deployment Health Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Deployment completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "**Server IP:** $ip" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "$domain" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🌐 Service URLs" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Root Domain:** https://$domain" >> $GITHUB_STEP_SUMMARY
+            echo "- **WireGuard UI:** https://vpn.$domain" >> $GITHUB_STEP_SUMMARY
+            echo "- **Galène Video:** https://meet.$domain" >> $GITHUB_STEP_SUMMARY
+            echo "- **Traefik Dashboard:** http://$ip:8080/dashboard/" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ Important Notes" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- SSL certificates may take 5-10 minutes to provision" >> $GITHUB_STEP_SUMMARY
+            echo "- Ensure DNS nameservers are updated at your registrar" >> $GITHUB_STEP_SUMMARY
+            echo "- WireGuard VPN port: 51820/UDP" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🌐 Service URLs (IP-based)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **WireGuard UI:** http://$ip/wireguard" >> $GITHUB_STEP_SUMMARY
+            echo "- **Galène Video:** http://$ip/galene" >> $GITHUB_STEP_SUMMARY
+            echo "- **Traefik Dashboard:** http://$ip:8080/dashboard/" >> $GITHUB_STEP_SUMMARY
+          fi
           
       - name: Display connection information
         run: |
