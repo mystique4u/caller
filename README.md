@@ -1,233 +1,464 @@
-# VPN & Services Server# WireGuard VPN on Hetzner Cloud
+# VPN & Services Server# VPN & Services Server# WireGuard VPN on Hetzner Cloud
 
 
 
-Fully automated deployment of WireGuard VPN, Galène video conferencing, and Traefik reverse proxy on Hetzner Cloud using Terraform and Ansible.Automated deployment of a WireGuard VPN server on Hetzner Cloud using Terraform, Ansible, and GitHub Actions.
+Fully automated deployment of **WireGuard VPN**, **Galène video conferencing**, and **Traefik reverse proxy** on Hetzner Cloud.
 
 
 
-## 🚀 Features## 🎯 Overview
+## 🚀 FeaturesFully automated deployment of WireGuard VPN, Galène video conferencing, and Traefik reverse proxy on Hetzner Cloud using Terraform and Ansible.Automated deployment of a WireGuard VPN server on Hetzner Cloud using Terraform, Ansible, and GitHub Actions.
 
 
 
-- **WireGuard VPN** with Web UI for easy client managementThis project automates the deployment of a WireGuard VPN server using:
+- ✅ **Fully Automated** - Zero manual configuration
 
-- **Galène** - Lightweight video conferencing server  - **Terraform**: Infrastructure provisioning on Hetzner Cloud
+- ✅ **WireGuard VPN** with Web UI for client management
 
-- **Traefik** - Modern reverse proxy with automatic routing- **Ansible**: Server configuration and management
+- ✅ **Galène** - Lightweight video conferencing## 🚀 Features## 🎯 Overview
 
-- **Docker-based** - All services run in containers- **GitHub Actions**: CI/CD pipeline for automated deployment
+- ✅ **Traefik** - Modern reverse proxy
 
-- **Fully automated** - Zero manual configuration needed- **WireGuard Image**: Pre-configured Hetzner image with WireGuard UI
+- ✅ **Docker-based** - All services containerized
 
-- **IP-based access** - Works out of the box without domain setup
+- ✅ **Firewall Automated** - Created and managed by Terraform
 
-## 📋 Prerequisites
+- ✅ **IP-based Access** - Works out of the box- **WireGuard VPN** with Web UI for easy client managementThis project automates the deployment of a WireGuard VPN server using:
 
-## 📋 Services & Access
 
-### Required Accounts & Tools
 
-After deployment, access your services at:- Hetzner Cloud account ([sign up here](https://www.hetzner.com/cloud))
+## 📋 Access Your Services- **Galène** - Lightweight video conferencing server  - **Terraform**: Infrastructure provisioning on Hetzner Cloud
 
-- GitHub account (for Actions)
 
-| Service | URL | Default Credentials |- Domain name (optional but recommended for HTTPS)
 
-|---------|-----|-------------------|
+| Service | URL | Credentials |- **Traefik** - Modern reverse proxy with automatic routing- **Ansible**: Server configuration and management
 
-| Traefik Dashboard | `http://YOUR_IP:8080/dashboard/` | No auth |### Local Development Tools
+|---------|-----|-------------|
 
-| WireGuard UI | `http://YOUR_IP/wireguard` | `admin` / `admin` |- [Terraform](https://www.terraform.io/downloads) >= 1.6.0
+| **Traefik Dashboard** | `http://YOUR_IP:8080/dashboard/` | No auth |- **Docker-based** - All services run in containers- **GitHub Actions**: CI/CD pipeline for automated deployment
 
-| Galène Video | `http://YOUR_IP/galene` | Room: `public`, Password: `admin` |- [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html) >= 2.14
+| **WireGuard UI** | `http://YOUR_IP/wireguard` | `admin` / `admin` |
 
-- SSH key pair
+| **Galène Video** | `http://YOUR_IP/galene` | Room: `public`, Pass: `admin` |- **Fully automated** - Zero manual configuration needed- **WireGuard Image**: Pre-configured Hetzner image with WireGuard UI
 
-## 🚦 Quick Start
 
-## 🚀 Quick Start
 
-1. Push to `main` branch - automatic deployment starts
+## ⚡ Quick Start- **IP-based access** - Works out of the box without domain setup
 
-2. Wait ~5 minutes for completion### 1. Initial Setup
 
-3. Access services using your server IP
 
-#### a) Create SSH Keys in Hetzner Cloud
+1. **Configure GitHub Secrets** (see below)## 📋 Prerequisites
+
+2. **Push to main** or trigger "Destroy and Redeploy" workflow
+
+3. **Wait ~10 minutes** for deployment## 📋 Services & Access
+
+4. **Access services** using your server IP
+
+5. **Change default passwords** immediately!### Required Accounts & Tools
+
+
+
+## 🔐 Required GitHub SecretsAfter deployment, access your services at:- Hetzner Cloud account ([sign up here](https://www.hetzner.com/cloud))
+
+
+
+Go to: `https://github.com/YOUR_USERNAME/caller/settings/secrets/actions`- GitHub account (for Actions)
+
+
+
+| Secret Name | Description | Example Value || Service | URL | Default Credentials |- Domain name (optional but recommended for HTTPS)
+
+|-------------|-------------|---------------|
+
+| `TF_API_TOKEN` | Terraform Cloud API token | `***` ||---------|-----|-------------------|
+
+| `HCLOUD_TOKEN` | Hetzner Cloud API token | `***` |
+
+| `FIREWALL_NAME` | Firewall name (auto-created) | `vpn-services-firewall` || Traefik Dashboard | `http://YOUR_IP:8080/dashboard/` | No auth |### Local Development Tools
+
+| `SSH_KEY_IDS` | SSH key IDs as JSON array | `[108153935]` |
+
+| `SSH_PRIVATE_KEY` | Private SSH key for Ansible | Full key content || WireGuard UI | `http://YOUR_IP/wireguard` | `admin` / `admin` |- [Terraform](https://www.terraform.io/downloads) >= 1.6.0
+
+
+
+**See detailed setup**: [`docs/secrets-update.md`](docs/secrets-update.md)| Galène Video | `http://YOUR_IP/galene` | Room: `public`, Password: `admin` |- [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html) >= 2.14
+
+
+
+## 🏗️ Infrastructure- SSH key pair
+
+
+
+- **Provider**: Hetzner Cloud## 🚦 Quick Start
+
+- **OS**: Clean Ubuntu 24.04  
+
+- **Instance**: CX23 (2 vCPU, 8GB RAM)## 🚀 Quick Start
+
+- **Location**: Nuremberg (nbg1)
+
+- **Firewall**: Auto-managed (SSH, HTTP, Traefik, WireGuard)1. Push to `main` branch - automatic deployment starts
+
+
+
+## 🔧 What Gets Installed2. Wait ~5 minutes for completion### 1. Initial Setup
+
+
+
+### System Packages3. Access services using your server IP
+
+- WireGuard & tools
+
+- Docker & Docker Compose#### a) Create SSH Keys in Hetzner Cloud
+
+- Essential utilities (htop, vim, git, etc.)
 
 ## 📖 Full Documentation1. Go to [Hetzner Cloud Console](https://console.hetzner.cloud/)
 
-2. Navigate to **Security** → **SSH Keys**
+### Docker Services
 
-See detailed guides in `/docs`:3. Add your SSH public key
+- **Traefik v2.11** - Reverse proxy & routing2. Navigate to **Security** → **SSH Keys**
 
-- [Branch Protection Setup](docs/branch-protection.md)4. Note the SSH key ID (you'll need this)
+- **WireGuard UI v0.6.2** - VPN management interface
 
-- [Terraform Cloud Setup](docs/terraform-cloud-setup.md)
+- **Galène** - Video conferencing (via Docker)See detailed guides in `/docs`:3. Add your SSH public key
+
+
+
+### Network Configuration- [Branch Protection Setup](docs/branch-protection.md)4. Note the SSH key ID (you'll need this)
+
+- IP forwarding enabled (IPv4 & IPv6)
+
+- WireGuard interface: `wg0` (10.0.0.1/24)- [Terraform Cloud Setup](docs/terraform-cloud-setup.md)
+
+- NAT/Masquerading for VPN clients
 
 - [GitHub Secrets Configuration](docs/github-secrets-setup.md)#### b) Create API Token
 
-1. In Hetzner Console, go to **Security** → **API Tokens**
+### Firewall Rules (Auto-created)
 
-## 🔧 Prerequisites2. Generate a new token with **Read & Write** permissions
+```1. In Hetzner Console, go to **Security** → **API Tokens**
 
-3. Save it securely (you'll need this for GitHub Secrets)
+Port 22    (TCP) - SSH
+
+Port 80    (TCP) - HTTP via Traefik## 🔧 Prerequisites2. Generate a new token with **Read & Write** permissions
+
+Port 8080  (TCP) - Traefik dashboard
+
+Port 51820 (UDP) - WireGuard VPN3. Save it securely (you'll need this for GitHub Secrets)
+
+```
 
 - Hetzner Cloud account with API token
 
+## 🚦 Deployment Options
+
 - Terraform Cloud account (free tier)#### c) Create Firewall (Optional but Recommended)
 
-- GitHub repository with Actions enabled1. Go to **Firewalls** in Hetzner Console
+### Automatic (on Push)
 
-- SSH key pair for server access2. Create a new firewall with these rules:
+```bash- GitHub repository with Actions enabled1. Go to **Firewalls** in Hetzner Console
 
-   - **Inbound:**
+git push origin main
 
-## 🛠️ Manual Redeploy     - SSH: TCP port 22 (from your IP or 0.0.0.0/0)
+```- SSH key pair for server access2. Create a new firewall with these rules:
 
-     - HTTPS: TCP port 443 (from 0.0.0.0/0)
 
-1. Go to **Actions** → **Destroy and Redeploy**     - WireGuard: UDP port 51820 (from 0.0.0.0/0)
 
-2. Click **Run workflow**   - **Outbound:** Allow all
+### Manual Redeploy   - **Inbound:**
 
-3. Type `DESTROY` to confirm3. Note the firewall name
+1. Go to **Actions** → **"Destroy and Redeploy"**
 
-4. Wait for completion
+2. Click **"Run workflow"**## 🛠️ Manual Redeploy     - SSH: TCP port 22 (from your IP or 0.0.0.0/0)
 
-### 2. Configure GitHub Secrets
+3. Type `DESTROY` to confirm
 
-## ⚠️ Security Notes
+4. Wait for completion     - HTTPS: TCP port 443 (from 0.0.0.0/0)
+
+
+
+## 📖 Usage Guides1. Go to **Actions** → **Destroy and Redeploy**     - WireGuard: UDP port 51820 (from 0.0.0.0/0)
+
+
+
+### WireGuard VPN2. Click **Run workflow**   - **Outbound:** Allow all
+
+
+
+1. Access: `http://YOUR_IP/wireguard`3. Type `DESTROY` to confirm3. Note the firewall name
+
+2. Login: `admin` / `admin`
+
+3. **Change password immediately!**4. Wait for completion
+
+4. Create clients:
+
+   - Click "New Client"### 2. Configure GitHub Secrets
+
+   - Enter name
+
+   - Download QR code or config file## ⚠️ Security Notes
+
+5. Import into WireGuard app
 
 Add these secrets to your GitHub repository (**Settings** → **Secrets and variables** → **Actions**):
 
+### Galène Video Conferencing
+
 - Change default passwords immediately after deployment
 
-- Services use HTTP (not HTTPS) on IP addresses| Secret Name | Description | Example |
+1. Access: `http://YOUR_IP/galene`
 
-- Configure a domain + Let's Encrypt for production use|-------------|-------------|---------|
+2. Join room: `public`- Services use HTTP (not HTTPS) on IP addresses| Secret Name | Description | Example |
 
-| `HCLOUD_TOKEN` | Your Hetzner Cloud API token | `your-api-token-here` |
+3. Operator password: `admin`
 
-## 📝 Infrastructure| `FIREWALL_NAME` | Name of your Hetzner firewall | `default-firewall` |
+4. Share room URL with participants- Configure a domain + Let's Encrypt for production use|-------------|-------------|---------|
 
-| `SSH_KEY_IDS` | JSON array of SSH key IDs | `[123456]` |
+
+
+### Traefik Dashboard| `HCLOUD_TOKEN` | Your Hetzner Cloud API token | `your-api-token-here` |
+
+
+
+1. Access: `http://YOUR_IP:8080/dashboard/`## 📝 Infrastructure| `FIREWALL_NAME` | Name of your Hetzner firewall | `default-firewall` |
+
+2. Monitor service health
+
+3. View routing rules| `SSH_KEY_IDS` | JSON array of SSH key IDs | `[123456]` |
+
+4. Check real-time metrics
 
 - **OS**: Clean Ubuntu 24.04| `SSH_PRIVATE_KEY` | Your SSH private key (for Ansible) | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
 
+## 🗂️ Server Directory Structure
+
 - **Instance**: Hetzner CX22 (2 vCPU, 4GB RAM)| `WIREGUARD_DOMAIN` | Your domain name (optional) | `vpn.example.com` |
 
-- **Location**: Nuremberg (nbg1)| `WIREGUARD_ADMIN_USER` | Admin username for UI (optional) | `admin` |
+```
 
-- **Firewall**: Ports 22, 80, 8080, 51820| `WIREGUARD_ADMIN_PASSWORD` | Admin password (optional) | Leave empty for interactive setup |
+/opt/services/- **Location**: Nuremberg (nbg1)| `WIREGUARD_ADMIN_USER` | Admin username for UI (optional) | `admin` |
+
+├── docker-compose.yml     # All service definitions
+
+├── wireguard-ui/          # WireGuard UI database- **Firewall**: Ports 22, 80, 8080, 51820| `WIREGUARD_ADMIN_PASSWORD` | Admin password (optional) | Leave empty for interactive setup |
+
+├── galene/
+
+│   ├── groups/            # Room configurations
+
+│   └── data/              # Runtime data
+
+└── traefik/## 🤝 Contributing### 3. Deploy via GitHub Actions
+
+    ├── traefik.toml       # Static config
+
+    └── dynamic/           # Dynamic routing
 
 
 
-## 🤝 Contributing### 3. Deploy via GitHub Actions
+/etc/wireguard/Issues and PRs welcome!#### Automatic Deployment
 
+└── wg0.conf              # WireGuard server config
 
+```1. Push to the `main` branch:
 
-Issues and PRs welcome!#### Automatic Deployment
-
-1. Push to the `main` branch:
    ```bash
-   git add .
+
+## 🛠️ Management Commands   git add .
+
    git commit -m "Initial WireGuard setup"
-   git push origin main
-   ```
 
-2. GitHub Actions will automatically:
+### SSH Access   git push origin main
+
+```bash   ```
+
+ssh -i ~/.ssh/hetzner-wireguard root@YOUR_IP
+
+```2. GitHub Actions will automatically:
+
    - Run Terraform to create the server
-   - Configure the server with Ansible
-   - Output the server IP address
 
-#### Manual Deployment
-1. Go to **Actions** tab in your repository
+### View Logs   - Configure the server with Ansible
+
+```bash   - Output the server IP address
+
+cd /opt/services
+
+docker compose logs -f [service_name]#### Manual Deployment
+
+```1. Go to **Actions** tab in your repository
+
 2. Select **Deploy WireGuard VPN to Hetzner Cloud**
-3. Click **Run workflow**
-4. Choose action: `apply`, `plan`, or `destroy`
 
-### 4. Initial Server Configuration
+### Restart Services3. Click **Run workflow**
+
+```bash4. Choose action: `apply`, `plan`, or `destroy`
+
+cd /opt/services
+
+docker compose restart### 4. Initial Server Configuration
+
+```
 
 After deployment, SSH into your server to complete the WireGuard setup:
 
-```bash
-# SSH into the server (use the IP from GitHub Actions output)
-ssh root@YOUR_SERVER_IP
+### Check WireGuard
 
-# The WireGuard setup script will guide you through:
-# 1. Setting up domain name (if you have one)
-# 2. Creating admin credentials
-# 3. Configuring Let's Encrypt SSL
+```bash```bash
+
+wg show# SSH into the server (use the IP from GitHub Actions output)
+
+```ssh root@YOUR_SERVER_IP
+
+
+
+### Update Services# The WireGuard setup script will guide you through:
+
+```bash# 1. Setting up domain name (if you have one)
+
+cd /opt/services# 2. Creating admin credentials
+
+docker compose pull# 3. Configuring Let's Encrypt SSL
+
+docker compose up -d```
+
 ```
 
 ### 5. Access WireGuard UI
 
+## 🔒 Security Notes
+
 After setup is complete:
-- **URL**: `https://YOUR_SERVER_IP` or `https://your-domain.com`
-- **Login**: Use credentials you set during initial setup
-- **Create clients**: Click "New Client" in the UI
-- **Apply config**: Always click "Apply Config" after changes
+
+- ⚠️ **Change all default passwords immediately!**- **URL**: `https://YOUR_SERVER_IP` or `https://your-domain.com`
+
+- Services use HTTP (not HTTPS) on IP addresses- **Login**: Use credentials you set during initial setup
+
+- For production: configure domain + Let's Encrypt- **Create clients**: Click "New Client" in the UI
+
+- Backup `/opt/services/` and `/etc/wireguard/` regularly- **Apply config**: Always click "Apply Config" after changes
+
+- Firewall automatically restricts access to required ports only
 
 ## 📁 Project Structure
 
+## 🐛 Troubleshooting
+
 ```
-.
-├── .github/
-│   └── workflows/
-│       └── deploy.yml          # GitHub Actions workflow
-├── ansible/
+
+### Services Not Accessible.
+
+```bash├── .github/
+
+docker ps  # Check running containers│   └── workflows/
+
+docker logs traefik  # Check Traefik logs│       └── deploy.yml          # GitHub Actions workflow
+
+```├── ansible/
+
 │   ├── ansible.cfg             # Ansible configuration
-│   ├── inventory.ini           # Server inventory
-│   └── playbook.yml            # Configuration playbook
-├── terraform/
-│   ├── .gitignore              # Terraform gitignore
-│   ├── main.tf                 # Main Terraform config
-│   └── terraform.tfvars.example # Example variables
+
+### WireGuard Issues│   ├── inventory.ini           # Server inventory
+
+```bash│   └── playbook.yml            # Configuration playbook
+
+wg show  # Check WireGuard status├── terraform/
+
+ip a show wg0  # Check interface│   ├── .gitignore              # Terraform gitignore
+
+sysctl net.ipv4.ip_forward  # Verify IP forwarding│   ├── main.tf                 # Main Terraform config
+
+```│   └── terraform.tfvars.example # Example variables
+
 └── README.md
+
+### Reset Everything```
+
+```bash
+
+cd /opt/services## 🛠️ Local Deployment (Alternative)
+
+docker compose down -v
+
+docker compose up -dIf you prefer to deploy manually without GitHub Actions:
+
 ```
-
-## 🛠️ Local Deployment (Alternative)
-
-If you prefer to deploy manually without GitHub Actions:
 
 ### 1. Configure Terraform
 
+## 📚 Documentation
+
 ```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-nano terraform.tfvars
+
+- [Secrets Configuration Update](docs/secrets-update.md)cd terraform
+
+- [Terraform Cloud Setup](docs/terraform-cloud-setup.md)cp terraform.tfvars.example terraform.tfvars
+
+- [GitHub Secrets Setup](docs/github-secrets-setup.md)# Edit terraform.tfvars with your values
+
+- [Branch Protection](docs/branch-protection.md)nano terraform.tfvars
+
 ```
+
+## 🎯 Key Improvements
 
 ### 2. Deploy Infrastructure
 
-```bash
-# Initialize Terraform
-terraform init
+### ✅ No Manual Firewall Setup
 
-# Review the plan
-terraform plan
+- Firewall automatically created by Terraform```bash
 
-# Apply changes
+- All rules defined in code# Initialize Terraform
+
+- Can be destroyed and recreatedterraform init
+
+
+
+### ✅ Enhanced Performance# Review the plan
+
+- CX23 instance (8GB RAM, was 4GB)terraform plan
+
+- Better for video conferencing
+
+- Handles more concurrent connections# Apply changes
+
 terraform apply
 
-# Get the server IP
-terraform output public_ip
-```
+### ✅ All Config in GitHub Secrets
 
-### 3. Configure with Ansible
+- No hardcoded credentials# Get the server IP
 
-```bash
-cd ../ansible
+- Easy credential rotationterraform output public_ip
 
-# Update inventory with your server IP
+- Secure storage```
+
+
+
+### ✅ Galène Integration### 3. Configure with Ansible
+
+- Official installation method followed
+
+- Docker-based deployment```bash
+
+- HTTP mode for IP-based accesscd ../ansible
+
+
+
+## 🤝 Contributing# Update inventory with your server IP
+
 nano inventory.ini
 
+Issues and pull requests welcome!
+
 # Run the playbook
-ansible-playbook -i inventory.ini playbook.yml
+
+## 📄 Licenseansible-playbook -i inventory.ini playbook.yml
+
 ```
+
+MIT License - Use and modify freely.
 
 ## 🔧 Configuration
 
