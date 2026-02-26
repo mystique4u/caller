@@ -8,6 +8,7 @@ on:
       - 'terraform/**'
       - 'ansible/**'
       - '.github/workflows/deploy.yml'
+      - '.github/workflows/destroy.yml'
   workflow_dispatch:
     inputs:
       action:
