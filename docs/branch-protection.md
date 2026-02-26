@@ -17,24 +17,18 @@
    - [x] **Require a pull request before merging**
      - [x] Require approvals: 1 (if working with team)
      - [ ] Dismiss stale pull request approvals when new commits are pushed
-   
    - [x] **Require status checks to pass before merging**
      - [x] Require branches to be up to date before merging
      - Select: `terraform / Terraform Plan & Apply`
-   
    - [x] **Require conversation resolution before merging**
-   
    - [ ] **Require signed commits** (optional but recommended)
-   
    - [x] **Require linear history** (optional - keeps history clean)
-   
    - [ ] **Require deployments to succeed before merging** (optional)
 
    #### ✅ **Advanced Protection:**
    - [x] **Do not allow bypassing the above settings**
    - [x] **Restrict who can push to matching branches**
      - Add yourself and trusted collaborators
-   
    - [ ] **Allow force pushes** (keep UNCHECKED for main)
    - [ ] **Allow deletions** (keep UNCHECKED for main)
 
@@ -59,6 +53,7 @@ If you're working alone, use minimal protection:
 ## 🚀 **Workflow with Branch Protection:**
 
 ### Development Workflow:
+
 ```bash
 # 1. Create a feature branch
 git checkout -b feature/update-config
@@ -113,14 +108,14 @@ git push origin main
 
 ## 📋 **Quick Settings Summary:**
 
-| Setting | Solo Developer | Team |
-|---------|---------------|------|
-| **Require PR** | Optional | ✅ Yes |
-| **Require status checks** | ✅ Yes | ✅ Yes |
-| **Require approvals** | ❌ No | ✅ Yes (1-2) |
-| **Block force push** | ✅ Yes | ✅ Yes |
-| **Block deletion** | ✅ Yes | ✅ Yes |
-| **Require signed commits** | Optional | ✅ Yes |
+| Setting                    | Solo Developer | Team         |
+| -------------------------- | -------------- | ------------ |
+| **Require PR**             | Optional       | ✅ Yes       |
+| **Require status checks**  | ✅ Yes         | ✅ Yes       |
+| **Require approvals**      | ❌ No          | ✅ Yes (1-2) |
+| **Block force push**       | ✅ Yes         | ✅ Yes       |
+| **Block deletion**         | ✅ Yes         | ✅ Yes       |
+| **Require signed commits** | Optional       | ✅ Yes       |
 
 ---
 

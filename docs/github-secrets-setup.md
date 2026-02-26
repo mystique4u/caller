@@ -5,6 +5,7 @@
 You need to add these secrets to your GitHub repository to deploy via GitHub Actions.
 
 ### How to Add Secrets:
+
 1. Go to your repository: https://github.com/mystique4u/caller
 2. Click **Settings** → **Secrets and variables** → **Actions**
 3. Click **"New repository secret"**
@@ -15,6 +16,7 @@ You need to add these secrets to your GitHub repository to deploy via GitHub Act
 ## 📋 Secrets to Add:
 
 ### 1. **HCLOUD_TOKEN**
+
 - **Name:** `HCLOUD_TOKEN`
 - **Value:** Your Hetzner Cloud API token
 - **Get it from:** https://console.hetzner.cloud/ → Security → API Tokens
@@ -26,6 +28,7 @@ Example: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ---
 
 ### 2. **FIREWALL_NAME**
+
 - **Name:** `FIREWALL_NAME`
 - **Value:** `default-firewall`
 
@@ -36,6 +39,7 @@ default-firewall
 ---
 
 ### 3. **SSH_KEY_IDS**
+
 - **Name:** `SSH_KEY_IDS`
 - **Value:** `[108153935]`
 
@@ -48,15 +52,18 @@ default-firewall
 ---
 
 ### 4. **SSH_PRIVATE_KEY**
+
 - **Name:** `SSH_PRIVATE_KEY`
 - **Value:** Your private key content
 
 Get it by running:
+
 ```bash
 cat ~/.ssh/hetzner-wireguard
 ```
 
 Copy the **entire output** including the BEGIN and END lines:
+
 ```
 -----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
@@ -71,6 +78,7 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 ---
 
 ### 5. **WIREGUARD_DOMAIN** (Optional)
+
 - **Name:** `WIREGUARD_DOMAIN`
 - **Value:** Your domain name (if you have one)
 
@@ -83,6 +91,7 @@ vpn.yourdomain.com
 ---
 
 ### 6. **WIREGUARD_ADMIN_USER** (Optional)
+
 - **Name:** `WIREGUARD_ADMIN_USER`
 - **Value:** `admin`
 
@@ -93,6 +102,7 @@ admin
 ---
 
 ### 7. **WIREGUARD_ADMIN_PASSWORD** (Optional)
+
 - **Name:** `WIREGUARD_ADMIN_PASSWORD`
 - **Value:** Leave empty for interactive setup
 
@@ -104,13 +114,13 @@ admin
 
 ## ✅ Summary - Copy These Values:
 
-| Secret Name | Value |
-|-------------|-------|
-| `HCLOUD_TOKEN` | `your-api-token-here` |
-| `FIREWALL_NAME` | `default-firewall` |
-| `SSH_KEY_IDS` | `[108153935]` |
-| `SSH_PRIVATE_KEY` | Output from: `cat ~/.ssh/hetzner-wireguard` |
-| `WIREGUARD_DOMAIN` | (optional - your domain or leave empty) |
+| Secret Name        | Value                                       |
+| ------------------ | ------------------------------------------- |
+| `HCLOUD_TOKEN`     | `your-api-token-here`                       |
+| `FIREWALL_NAME`    | `default-firewall`                          |
+| `SSH_KEY_IDS`      | `[108153935]`                               |
+| `SSH_PRIVATE_KEY`  | Output from: `cat ~/.ssh/hetzner-wireguard` |
+| `WIREGUARD_DOMAIN` | (optional - your domain or leave empty)     |
 
 ---
 
@@ -126,6 +136,7 @@ git push origin main
 ```
 
 GitHub Actions will automatically:
+
 1. ✅ Run Terraform to create the server
 2. ✅ Configure WireGuard with Ansible
 3. ✅ Output the server IP address

@@ -9,10 +9,12 @@ You already have a Terraform Cloud account. Here's how to configure it:
 ## 📋 **Step 1: Create Organization & Workspace**
 
 ### A. Login to Terraform Cloud
+
 1. Go to: https://app.terraform.io/
 2. Login with your account
 
 ### B. Create/Verify Organization
+
 1. Click on your profile → **Organizations**
 2. If you have organization "itin" - great! Use it
 3. If not, create new organization:
@@ -21,6 +23,7 @@ You already have a Terraform Cloud account. Here's how to configure it:
    - Click **"Create organization"**
 
 ### C. Create Workspace
+
 1. In your organization, click **"New workspace"**
 2. Choose workflow: **"Version control workflow"** or **"CLI-driven workflow"**
    - **Recommended**: CLI-driven workflow (for GitHub Actions)
@@ -32,6 +35,7 @@ You already have a Terraform Cloud account. Here's how to configure it:
 ## 🔑 **Step 2: Get Terraform Cloud API Token**
 
 ### Create API Token:
+
 1. Click your profile → **User Settings**
 2. Go to **Tokens**
 3. Click **"Create an API token"**
@@ -59,6 +63,7 @@ terraform {
 ### If You Need to Change Organization/Workspace:
 
 Edit `terraform/main.tf` and update:
+
 ```hcl
 terraform {
   backend "remote" {
@@ -78,19 +83,21 @@ terraform {
 In Terraform Cloud workspace settings, add these variables:
 
 ### A. Go to Workspace Settings
+
 1. Open workspace: `hetznercloud`
 2. Go to **Variables** tab
 
 ### B. Add Terraform Variables (Sensitive):
 
-| Variable Name | Value | Sensitive | Category |
-|--------------|-------|-----------|----------|
-| `hcloud_token` | Your Hetzner API token | ✅ Yes | Terraform |
-| `firewall_name` | `default-firewall` | ❌ No | Terraform |
-| `ssh_key_ids` | `[108153935]` | ❌ No | Terraform |
-| `domain_name` | `vpn.example.com` (optional) | ❌ No | Terraform |
+| Variable Name   | Value                        | Sensitive | Category  |
+| --------------- | ---------------------------- | --------- | --------- |
+| `hcloud_token`  | Your Hetzner API token       | ✅ Yes    | Terraform |
+| `firewall_name` | `default-firewall`           | ❌ No     | Terraform |
+| `ssh_key_ids`   | `[108153935]`                | ❌ No     | Terraform |
+| `domain_name`   | `vpn.example.com` (optional) | ❌ No     | Terraform |
 
 **How to add:**
+
 1. Click **"Add variable"**
 2. Select **"Terraform variable"**
 3. Enter variable name (without `TF_VAR_` prefix)
@@ -118,9 +125,10 @@ I'll update your workflow to use Terraform Cloud:
 
 ```yaml
 env:
-  TERRAFORM_VERSION: '1.6.0'
-  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}  # ← Add this
-  
+  TERRAFORM_VERSION: "1.6.0"
+  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }} # ← Add this
+
+
   # Remove these - they'll be in Terraform Cloud workspace
   # TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
   # TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
@@ -133,6 +141,7 @@ env:
 ## 🧪 **Step 7: Test the Setup**
 
 ### A. Local Test (Optional):
+
 ```bash
 cd terraform
 
@@ -151,6 +160,7 @@ terraform plan
 ```
 
 ### B. GitHub Actions Test:
+
 ```bash
 # Commit and push
 git add .
@@ -166,21 +176,25 @@ git push origin main
 ## 🎯 **Benefits of Terraform Cloud:**
 
 ✅ **Remote State Management**
+
 - State stored securely in the cloud
 - No need to manage state files locally
 - Automatic state locking
 
 ✅ **Team Collaboration**
+
 - Multiple people can work safely
 - State locking prevents conflicts
 - Audit logs for all changes
 
 ✅ **Secure Variable Storage**
+
 - Sensitive values encrypted
 - Never stored in GitHub
 - Centralized management
 
 ✅ **State History**
+
 - Keep track of all state versions
 - Rollback if needed
 - Audit trail
@@ -190,11 +204,13 @@ git push origin main
 ## 🔧 **Workflow Options:**
 
 ### Option 1: CLI-Driven (Recommended for GitHub Actions)
+
 - GitHub Actions triggers Terraform
 - State managed in Terraform Cloud
 - Variables in Terraform Cloud workspace
 
 ### Option 2: VCS-Driven (Alternative)
+
 - Connect Terraform Cloud directly to GitHub
 - Terraform Cloud watches for changes
 - Auto-runs on PR/merge
@@ -204,12 +220,14 @@ git push origin main
 ## 📊 **Workspace Settings:**
 
 ### Execution Mode:
+
 - **Local**: Terraform runs on your machine/GitHub Actions
 - **Remote**: Terraform runs on Terraform Cloud servers
 
 **Recommended**: **Local** (for GitHub Actions)
 
 ### Apply Method:
+
 - **Auto apply**: Automatically applies after plan
 - **Manual apply**: Requires manual approval
 
@@ -220,6 +238,7 @@ git push origin main
 ## 🆘 **Troubleshooting:**
 
 ### "Error: No valid credential sources"
+
 ```bash
 # Run locally:
 terraform login
@@ -229,11 +248,13 @@ export TF_TOKEN_app_terraform_io="your-token"
 ```
 
 ### "Error: workspace not found"
+
 - Verify organization name in `main.tf`
 - Verify workspace name in `main.tf`
 - Check workspace exists in Terraform Cloud
 
 ### "Error: backend initialization required"
+
 ```bash
 terraform init -reconfigure
 ```
