@@ -27,7 +27,6 @@ env:
   TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
   TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
   TF_VAR_ssh_key_ids: ${{ secrets.SSH_KEY_IDS }}
-  TF_VAR_domain_name: ${{ secrets.WIREGUARD_DOMAIN }}
 
 jobs:
   terraform:
