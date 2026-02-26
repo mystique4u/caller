@@ -22,6 +22,12 @@ Add these secrets:
 - `DOMAIN_NAME` - Your domain (e.g., "itin.buzz") - optional
 - `EMAIL_ADDRESS` - Email for Let's Encrypt - optional
 
+**Optional for testing:**
+- `LETSENCRYPT_ENV` - Set to `staging` for test certificates (avoids rate limits)
+  - Use `staging` for testing deployments
+  - Use `production` (default) for real certificates
+  - Staging certificates will show browser warnings but won't hit rate limits
+
 ### 2. Deploy Infrastructure
 
 1. Go to **Actions** tab in GitHub
@@ -33,6 +39,12 @@ Add these secrets:
    - Skip validation: `false` (recommended)
 5. Click **"Run workflow"** button
 6. Wait for completion (~10-15 minutes)
+
+**First deployment with domain:**
+- SSL certificates will be automatically requested from Let's Encrypt
+- Certificates are stored in `/opt/services/traefik/acme/acme.json`
+- On redeployment, existing certificates are reused (no new requests)
+- Certificates auto-renew 30 days before expiration
 
 ### 3. Verify Deployment
 
@@ -231,6 +243,43 @@ The workflow will automatically run health checks:
    - `cx23` (2 vCPU, 8GB RAM) - recommended
    - `cx33` (4 vCPU, 16GB RAM) - larger (usually better availability)
    - `cx21` (2 vCPU, 4GB RAM) - smaller (might be tight)
+
+### Let's Encrypt Rate Limits
+
+**Error:** Too many certificate requests or validation failures
+
+**Cause:** Let's Encrypt has rate limits to prevent abuse:
+- 50 certificates per domain per week
+- 5 failed validations per hour
+- 300 new orders per account per 3 hours
+
+**Solutions:**
+
+1. **Use staging environment for testing** (recommended):
+   ```bash
+   # Add GitHub Secret:
+   # Name: LETSENCRYPT_ENV
+   # Value: staging
+   ```
+   - Staging certificates will show browser warnings
+   - No rate limits for testing
+   - Switch to `production` when ready
+
+2. **Certificates are automatically preserved**:
+   - Stored in `/opt/services/traefik/acme/acme.json`
+   - Reused on redeployment (no new requests)
+   - Auto-renewed 30 days before expiration
+   - Only deleted if you destroy infrastructure
+
+3. **Wait for rate limit reset**:
+   - Failed validations: 1 hour
+   - Certificate limit: 1 week
+   - Check status: https://crt.sh/ (search your domain)
+
+4. **Ensure DNS is correct before deploying**:
+   - Verify nameservers are updated
+   - Test with: `dig yourdomain.com`
+   - Wait for DNS propagation (5-30 minutes)
 
 ### Plan shows no changes but you made updates:
 - Check if file is committed: `git status`

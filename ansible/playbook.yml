@@ -10,6 +10,7 @@
     server_ip: "{{ ansible_host }}"
     domain_name: "{{ lookup('env', 'DOMAIN_NAME') | default('', true) }}"
     email_address: "{{ lookup('env', 'EMAIL_ADDRESS') | default('admin@' + domain_name, true) }}"
+    letsencrypt_env: "{{ lookup('env', 'LETSENCRYPT_ENV') | default('production', true) }}"
     wireguard_port: 51820
     wireguard_ui_version: "0.6.2"
     galene_image: "ghcr.io/galene-org/galene:latest"
@@ -182,6 +183,9 @@
           [certificatesResolvers.letsencrypt.acme]
             email = "{{ email_address }}"
             storage = "/acme/acme.json"
+            {% if letsencrypt_env == 'staging' %}
+            caServer = "https://acme-staging-v02.api.letsencrypt.org/directory"
+            {% endif %}
             [certificatesResolvers.letsencrypt.acme.httpChallenge]
               entryPoint = "web"
           {% endif %}
@@ -392,10 +396,29 @@
 
     - name: Set correct permissions for acme.json
       file:
+    - name: Check if Let's Encrypt certificates already exist
+      stat:
+        path: /opt/services/traefik/acme/acme.json
+      register: acme_file
+      when: use_https
+
+    - name: Create acme.json if it doesn't exist
+      file:
         path: /opt/services/traefik/acme/acme.json
         state: touch
         mode: '0600'
+      when: use_https and not acme_file.stat.exists
+
+    - name: Display certificate status
+      debug:
+        msg: "{{ 'Using existing Let\'s Encrypt certificates' if (acme_file.stat.exists and acme_file.stat.size > 0) else 'Will request new Let\'s Encrypt certificates (first deployment)' }}"
       when: use_https
+
+    - name: Ensure acme.json has correct permissions
+      file:
+        path: /opt/services/traefik/acme/acme.json
+        mode: '0600'
+      when: use_https and acme_file.stat.exists
 
     - name: Pull and start Docker services
       shell: |
