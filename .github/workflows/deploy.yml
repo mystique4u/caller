@@ -178,10 +178,19 @@ jobs:
       - name: Check for common security issues
         run: |
           echo "🔍 Checking for common security misconfigurations..."
-          # Check for overly permissive firewall rules
-          if grep -n "0.0.0.0/0" main.tf | grep -v "#"; then
-            echo "::warning::Found potential overly permissive firewall rules"
+          
+          # Check for SSH (port 22) open to the world - this is a real security risk
+          if grep -B5 -A5 "port.*22" main.tf | grep "0.0.0.0/0" | grep -v "#" > /dev/null 2>&1; then
+            echo "::warning::SSH port 22 is open to 0.0.0.0/0 - consider restricting to specific IPs"
           fi
+          
+          # Check for exposed database ports
+          for port in 3306 5432 27017 6379 9200; do
+            if grep -B5 -A5 "port.*$port" main.tf | grep "0.0.0.0/0" | grep -v "#" > /dev/null 2>&1; then
+              echo "::error::Database port $port is exposed to the internet!"
+            fi
+          done
+          
           echo "✅ Security check complete"
 
   plan:
