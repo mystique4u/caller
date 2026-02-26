@@ -551,20 +551,19 @@ jobs:
       - name: Check DNS resolution
         run: |
           domain="${{ secrets.DOMAIN_NAME }}"
-          if [ -n "$domain" ]; then
-            echo "🔍 Checking DNS resolution for $domain..."
-            
-            echo "=== Root Domain ==="
-            dig +short "$domain" || echo "⚠️ DNS not resolved yet"
-            
-            echo "=== VPN Subdomain ==="
-            dig +short "vpn.$domain" || echo "⚠️ DNS not resolved yet"
-            
-            echo "=== Meet Subdomain ==="
-            dig +short "meet.$domain" || echo "⚠️ DNS not resolved yet"
-            
-            echo ""
-            echo "Expected IP: ${{ needs.terraform.outputs.public_ip }}"
+          echo "🔍 Checking DNS resolution for $domain..."
+          
+          echo "=== Root Domain ==="
+          dig +short "$domain" || echo "⚠️ DNS not resolved yet"
+          
+          echo "=== VPN Subdomain ==="
+          dig +short "vpn.$domain" || echo "⚠️ DNS not resolved yet"
+          
+          echo "=== Meet Subdomain ==="
+          dig +short "meet.$domain" || echo "⚠️ DNS not resolved yet"
+          
+          echo ""
+          echo "Expected IP: ${{ needs.terraform.outputs.public_ip }}"
           
       - name: Check HTTPS services
         run: |

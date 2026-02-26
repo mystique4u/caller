@@ -315,6 +315,7 @@
       shell: |
         cd /opt/services
         docker compose pull --ignore-pull-failures || true
+        docker compose down || true
         docker compose up -d
       args:
         executable: /bin/bash
