@@ -298,6 +298,7 @@
                 - "traefik.http.routers.galene.rule=Host(`meet.{{ domain_name }}`)"
                 - "traefik.http.routers.galene.entrypoints=websecure"
                 - "traefik.http.services.galene.loadbalancer.server.port=8443"
+                - "traefik.http.services.galene.loadbalancer.server.scheme=http"
                 - "traefik.http.routers.galene.tls.certresolver=letsencrypt"
 
           networks:
@@ -372,6 +373,7 @@
                 - "traefik.http.routers.galene.rule=Host(`{{ server_ip }}`) && PathPrefix(`/galene`)"
                 - "traefik.http.routers.galene.entrypoints=web"
                 - "traefik.http.services.galene.loadbalancer.server.port=8443"
+                - "traefik.http.services.galene.loadbalancer.server.scheme=http"
                 - "traefik.http.middlewares.galene-strip.stripprefix.prefixes=/galene"
                 - "traefik.http.routers.galene.middlewares=galene-strip"
 
