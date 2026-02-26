@@ -193,6 +193,34 @@ The workflow will automatically run health checks:
 
 ## 🔧 Troubleshooting Redeployments
 
+### Server creation fails: "resource_unavailable"
+
+**Error:** `error during placement (resource_unavailable...)`
+
+**Cause:** The requested server type (CX23) is temporarily out of stock in the selected location (nbg1).
+
+**Solutions:**
+
+1. **Try a different location** (recommended):
+   ```bash
+   # Edit terraform/main.tf or add TF_VAR_server_location secret
+   # Available locations: nbg1 (Nuremberg), fsn1 (Falkenstein), hel1 (Helsinki), ash (Ashburn)
+   ```
+   
+   Add GitHub Secret:
+   - `TF_VAR_server_location` = `fsn1` (or `hel1`, `ash`)
+   
+   Then redeploy.
+
+2. **Wait and retry** (15-30 minutes):
+   - Server types frequently become available again
+   - Check Hetzner status: https://status.hetzner.cloud/
+
+3. **Use different server type** (edit `terraform/main.tf`):
+   - `cx23` (2 vCPU, 8GB RAM) - recommended
+   - `cx33` (4 vCPU, 16GB RAM) - larger
+   - `cx21` (2 vCPU, 4GB RAM) - smaller (might be tight)
+
 ### Plan shows no changes but you made updates:
 - Check if file is committed: `git status`
 - Check if pushed: `git log origin/main`

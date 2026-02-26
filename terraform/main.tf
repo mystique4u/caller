@@ -78,7 +78,7 @@ resource "hcloud_server" "vm" {
   name        = "vpn-services-server"
   server_type = "cx23"
   image       = "ubuntu-24.04"
-  location    = "nbg1"
+  location    = var.server_location
 
   public_net {
     ipv4_enabled = true
@@ -91,6 +91,10 @@ resource "hcloud_server" "vm" {
   labels = {
     app     = "vpn-services"
     managed = "terraform"
+  }
+
+  lifecycle {
+    ignore_changes = [location]
   }
 }
 
@@ -212,4 +216,10 @@ variable "domain_name" {
   description = "Domain name for the services (e.g., example.com)"
   type        = string
   default     = ""
+}
+
+variable "server_location" {
+  description = "Hetzner datacenter location (nbg1, fsn1, hel1, ash)"
+  type        = string
+  default     = "nbg1"
 }
