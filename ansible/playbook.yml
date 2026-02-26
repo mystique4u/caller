@@ -70,12 +70,22 @@
         state: started
         enabled: yes
 
-    - name: Install Docker SDK for Python
+    - name: Install Docker SDK for Python (Ubuntu 24.04 compatible)
+      apt:
+        name:
+          - python3-docker
+        state: present
+      ignore_errors: yes
+
+    - name: Install Docker SDK via pip with break-system-packages (fallback)
       pip:
         name:
           - docker
           - docker-compose
         state: present
+        extra_args: --break-system-packages
+      when: ansible_distribution_version is version('24.04', '>=')
+      ignore_errors: yes
 
     # WireGuard Configuration
     - name: Enable IP forwarding

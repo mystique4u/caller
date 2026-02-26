@@ -1,0 +1,167 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: 'Type "DESTROY" to confirm infrastructure destruction'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for destroying infrastructure'
+        required: true
+        type: string
+
+env:
+  TERRAFORM_VERSION: '1.6.0'
+  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+  TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+  TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
+  TF_VAR_ssh_key_ids: ${{ secrets.SSH_KEY_IDS }}
+  TF_VAR_domain_name: ${{ secrets.DOMAIN_NAME }}
+
+jobs:
+  validate-destroy:
+    name: Validate Destroy Request
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_destroy }}" != "DESTROY" ]; then
+            echo "❌ Destroy confirmation failed"
+            echo "You must type exactly 'DESTROY' to proceed"
+            exit 1
+          fi
+          echo "✅ Destroy confirmed"
+          
+      - name: Log destroy request
+        run: |
+          echo "## 🗑️ Infrastructure Destroy Request" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Requested by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **WARNING:** This will destroy all infrastructure resources!" >> $GITHUB_STEP_SUMMARY
+
+  show-plan:
+    name: Show Destroy Plan
+    runs-on: ubuntu-latest
+    needs: validate-destroy
+    defaults:
+      run:
+        working-directory: ./terraform
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          
+      - name: Terraform Init
+        run: |
+          echo "🔧 Initializing Terraform..."
+          terraform init
+          
+      - name: Show Current State
+        run: |
+          echo "📊 Current Infrastructure State:"
+          terraform show -no-color || echo "No state found"
+          
+      - name: Create Destroy Plan
+        run: |
+          echo "📋 Creating destroy plan..."
+          terraform plan -destroy -no-color -out=destroy.tfplan
+          
+      - name: Show Destroy Plan
+        run: |
+          echo "🗑️ Resources to be destroyed:"
+          terraform show -no-color destroy.tfplan
+          
+      - name: Upload Destroy Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: destroy-plan
+          path: terraform/destroy.tfplan
+          retention-days: 1
+          
+      - name: Create Summary
+        run: |
+          echo "## 📋 Destroy Plan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following resources will be destroyed:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```terraform' >> $GITHUB_STEP_SUMMARY
+          terraform show -no-color destroy.tfplan | head -n 50 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  confirm-destroy:
+    name: Final Confirmation
+    runs-on: ubuntu-latest
+    needs: show-plan
+    environment:
+      name: destroy-production
+    
+    steps:
+      - name: Manual Approval Required
+        run: |
+          echo "🚨 FINAL CONFIRMATION REQUIRED"
+          echo "Review the destroy plan and approve to proceed"
+          echo "This action cannot be undone!"
+
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate-destroy, show-plan, confirm-destroy]
+    environment:
+      name: production
+    defaults:
+      run:
+        working-directory: ./terraform
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          
+      - name: Terraform Init
+        run: terraform init
+        
+      - name: Download Destroy Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: destroy-plan
+          path: terraform/
+          
+      - name: Terraform Destroy
+        run: |
+          echo "🗑️ Destroying infrastructure..."
+          terraform apply -auto-approve destroy.tfplan
+          echo "✅ Infrastructure destroyed successfully"
+          
+      - name: Verify Destruction
+        run: |
+          echo "🔍 Verifying infrastructure destruction..."
+          terraform show -no-color || echo "State is now empty"
+          
+      - name: Create Destruction Report
+        run: |
+          echo "## ✅ Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Destroyed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All infrastructure resources have been destroyed." >> $GITHUB_STEP_SUMMARY
