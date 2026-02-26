@@ -94,16 +94,17 @@ resource "hcloud_server" "vm" {
   }
 }
 
-# Use existing DNS Zone (instead of creating new one)
-data "hcloud_dns_zone" "domain" {
+
+# Use existing DNS Zone (created manually in Hetzner Console)
+data "hcloud_zone" "domain" {
   count = var.domain_name != "" ? 1 : 0
   name  = var.domain_name
 }
 
 # DNS A Record for root domain
-resource "hcloud_dns_record" "root" {
+resource "hcloud_zone_record" "root" {
   count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_dns_zone.domain[0].id
+  zone_id = data.hcloud_zone.domain[0].id
   name    = "@"
   value   = hcloud_server.vm.ipv4_address
   type    = "A"
@@ -111,9 +112,9 @@ resource "hcloud_dns_record" "root" {
 }
 
 # DNS AAAA Record for root domain (IPv6)
-resource "hcloud_dns_record" "root_ipv6" {
+resource "hcloud_zone_record" "root_ipv6" {
   count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_dns_zone.domain[0].id
+  zone_id = data.hcloud_zone.domain[0].id
   name    = "@"
   value   = hcloud_server.vm.ipv6_address
   type    = "AAAA"
@@ -121,9 +122,9 @@ resource "hcloud_dns_record" "root_ipv6" {
 }
 
 # DNS A Record for www subdomain
-resource "hcloud_dns_record" "www" {
+resource "hcloud_zone_record" "www" {
   count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_dns_zone.domain[0].id
+  zone_id = data.hcloud_zone.domain[0].id
   name    = "www"
   value   = hcloud_server.vm.ipv4_address
   type    = "A"
@@ -131,9 +132,9 @@ resource "hcloud_dns_record" "www" {
 }
 
 # DNS A Record for wireguard subdomain
-resource "hcloud_dns_record" "wireguard" {
+resource "hcloud_zone_record" "wireguard" {
   count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_dns_zone.domain[0].id
+  zone_id = data.hcloud_zone.domain[0].id
   name    = "vpn"
   value   = hcloud_server.vm.ipv4_address
   type    = "A"
@@ -141,9 +142,9 @@ resource "hcloud_dns_record" "wireguard" {
 }
 
 # DNS A Record for galene subdomain
-resource "hcloud_dns_record" "galene" {
+resource "hcloud_zone_record" "galene" {
   count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_dns_zone.domain[0].id
+  zone_id = data.hcloud_zone.domain[0].id
   name    = "meet"
   value   = hcloud_server.vm.ipv4_address
   type    = "A"
@@ -178,7 +179,7 @@ output "domain_name" {
 
 output "dns_zone_id" {
   description = "The DNS zone ID"
-  value       = var.domain_name != "" ? data.hcloud_dns_zone.domain[0].id : "N/A"
+  value       = var.domain_name != "" ? data.hcloud_zone.domain[0].id : "N/A"
 }
 
 output "nameservers" {
@@ -192,6 +193,13 @@ variable "hcloud_token" {
   type        = string
   sensitive   = true
 }
+
+# Uncomment if you want to pass DNS token as a variable (otherwise use env var HETZNER_DNS_TOKEN)
+# variable "hetzner_dns_token" {
+#   description = "Hetzner DNS API token (for DNS record management)"
+#   type        = string
+#   sensitive   = true
+# }
 
 variable "firewall_name" {
   description = "Name of the Hetzner firewall"
