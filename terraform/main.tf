@@ -103,52 +103,47 @@ data "hcloud_zone" "domain" {
 
 # DNS A Record for root domain
 resource "hcloud_zone_record" "root" {
-  count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_zone.domain[0].id
-  name    = "@"
-  value   = hcloud_server.vm.ipv4_address
-  type    = "A"
-  ttl     = 300
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "@"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
 }
 
 # DNS AAAA Record for root domain (IPv6)
 resource "hcloud_zone_record" "root_ipv6" {
-  count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_zone.domain[0].id
-  name    = "@"
-  value   = hcloud_server.vm.ipv6_address
-  type    = "AAAA"
-  ttl     = 300
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "@"
+  type  = "AAAA"
+  value = hcloud_server.vm.ipv6_address
 }
 
 # DNS A Record for www subdomain
 resource "hcloud_zone_record" "www" {
-  count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_zone.domain[0].id
-  name    = "www"
-  value   = hcloud_server.vm.ipv4_address
-  type    = "A"
-  ttl     = 300
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "www"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
 }
 
 # DNS A Record for wireguard subdomain
 resource "hcloud_zone_record" "wireguard" {
-  count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_zone.domain[0].id
-  name    = "vpn"
-  value   = hcloud_server.vm.ipv4_address
-  type    = "A"
-  ttl     = 300
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "vpn"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
 }
 
 # DNS A Record for galene subdomain
 resource "hcloud_zone_record" "galene" {
-  count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.hcloud_zone.domain[0].id
-  name    = "meet"
-  value   = hcloud_server.vm.ipv4_address
-  type    = "A"
-  ttl     = 300
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "meet"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
 }
 
 # Outputs
