@@ -255,7 +255,7 @@
               image: "{{ galene_image }}"
               container_name: galene
               restart: unless-stopped
-              command: ["-http", "0.0.0.0:8443"]
+              command: ["-http", ":8080", "-insecure"]
               volumes:
                 - /opt/services/galene/groups:/opt/galene/groups
                 - /opt/services/galene/data:/opt/galene/data
@@ -265,7 +265,7 @@
                 - "traefik.enable=true"
                 - "traefik.http.routers.galene.rule=Host(`meet.{{ domain_name }}`)"
                 - "traefik.http.routers.galene.entrypoints=websecure"
-                - "traefik.http.services.galene.loadbalancer.server.port=8443"
+                - "traefik.http.services.galene.loadbalancer.server.port=8080"
                 - "traefik.http.services.galene.loadbalancer.server.scheme=http"
                 - "traefik.http.routers.galene.tls.certresolver=letsencrypt"
 
