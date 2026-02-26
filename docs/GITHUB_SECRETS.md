@@ -42,9 +42,44 @@ Configure these secrets in GitHub at:
 
 **Example**: `A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0`
 
+**Note**: This token is used for both servers AND DNS management (integrated API)
+
 ---
 
-## 3. FIREWALL_NAME
+## 3. DOMAIN_NAME
+
+**Purpose**: Your custom domain for HTTPS access
+
+**How to get it**:
+
+1. Purchase a domain from any registrar (Namecheap, GoDaddy, etc.)
+2. Use the domain without protocol or path
+
+**Value format**: `example.com` (just the domain)
+
+**Examples**: `mydomain.com` or `myvpn.net`
+
+**Note**: Leave empty to use IP address only (HTTP). With domain, you get:
+
+- `https://vpn.yourdomain.com` - WireGuard UI
+- `https://meet.yourdomain.com` - Galène Video
+- `https://yourdomain.com:8080/dashboard/` - Traefik Dashboard
+
+---
+
+## 4. EMAIL_ADDRESS
+
+**Purpose**: Email for Let's Encrypt SSL certificate notifications
+
+**Value format**: `your-email@example.com`
+
+**Examples**: `admin@mydomain.com` or `you@gmail.com`
+
+**Note**: Optional, defaults to `admin@yourdomain.com` if not set
+
+---
+
+## 5. FIREWALL_NAME
 
 **Purpose**: Name for the firewall (auto-created by Terraform)
 
@@ -54,7 +89,7 @@ Configure these secrets in GitHub at:
 
 ---
 
-## 4. SSH_KEY_IDS
+## 7. SSH_KEY_IDS
 
 **Purpose**: SSH key IDs for server access (as JSON array)
 
@@ -71,7 +106,7 @@ Configure these secrets in GitHub at:
 
 ---
 
-## 5. SSH_PRIVATE_KEY
+## 8. SSH_PRIVATE_KEY
 
 **Purpose**: Private SSH key for Ansible to configure the server
 
@@ -104,13 +139,50 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
 
 ## Quick Reference Table
 
-| Secret Name       | Type       | Example Value           |
-| ----------------- | ---------- | ----------------------- |
-| `TF_API_TOKEN`    | String     | `TYBeJ4Gh8NK...`        |
-| `HCLOUD_TOKEN`    | String     | `A1B2C3D4E5F6...`       |
-| `FIREWALL_NAME`   | String     | `vpn-services-firewall` |
-| `SSH_KEY_IDS`     | JSON Array | `[108153935]`           |
-| `SSH_PRIVATE_KEY` | Multi-line | `-----BEGIN OPENSSH...` |
+| Secret Name       | Type       | Example Value           | Required |
+| ----------------- | ---------- | ----------------------- | -------- |
+| `TF_API_TOKEN`    | String     | `TYBeJ4Gh8NK...`        | Yes      |
+| `HCLOUD_TOKEN`    | String     | `A1B2C3D4E5F6...`       | Yes      |
+| `DOMAIN_NAME`     | String     | `example.com`           | No\*     |
+| `EMAIL_ADDRESS`   | String     | `admin@example.com`     | No       |
+| `FIREWALL_NAME`   | String     | `vpn-services-firewall` | Yes      |
+| `SSH_KEY_IDS`     | JSON Array | `[108153935]`           | Yes      |
+| `SSH_PRIVATE_KEY` | Multi-line | `-----BEGIN OPENSSH...` | Yes      |
+
+\* Required only if you want HTTPS with custom domain. Without domain, services use HTTP with IP address.
+
+**Note**: The `HCLOUD_TOKEN` now manages both servers AND DNS (Hetzner unified the APIs).
+
+---
+
+## Two Deployment Modes
+
+### Mode 1: IP Address Only (HTTP)
+
+**Requires**: `TF_API_TOKEN`, `HCLOUD_TOKEN`, `FIREWALL_NAME`, `SSH_KEY_IDS`, `SSH_PRIVATE_KEY`
+
+**Access**:
+
+- WireGuard UI: `http://SERVER_IP/wireguard`
+- Galène Video: `http://SERVER_IP/galene`
+- Traefik Dashboard: `http://SERVER_IP:8080/dashboard/`
+
+### Mode 2: Custom Domain (HTTPS)
+
+**Requires**: All secrets from Mode 1 + `DOMAIN_NAME`, `EMAIL_ADDRESS`
+
+**Access**:
+
+- WireGuard UI: `https://vpn.yourdomain.com`
+- Galène Video: `https://meet.yourdomain.com`
+- Traefik Dashboard: `https://yourdomain.com:8080/dashboard/`
+
+**DNS Setup**:  
+DNS is automatically managed by Hetzner Cloud API. Update nameservers at your domain registrar to:
+
+- `hydrogen.ns.hetzner.com`
+- `oxygen.ns.hetzner.com`
+- `helium.ns.hetzner.de`
 
 ---
 
@@ -120,18 +192,18 @@ After adding all secrets:
 
 1. **Check secrets are set**:
    - Go to `https://github.com/mystique4u/caller/settings/secrets/actions`
-   - You should see all 5 secrets listed
+   - Required: `TF_API_TOKEN`, `HCLOUD_TOKEN`, `FIREWALL_NAME`, `SSH_KEY_IDS`, `SSH_PRIVATE_KEY`
+   - Optional: `DOMAIN_NAME`, `EMAIL_ADDRESS`
 
 2. **Test deployment**:
    - Go to **Actions** tab
    - Run "Destroy and Redeploy" workflow
    - Type `DESTROY` to confirm
-   - Wait for completion (~10 minutes)
+   - Wait for completion (~10-15 minutes)
 
 3. **Access services**:
-   - WireGuard UI: `http://SERVER_IP/wireguard`
-   - Galène: `http://SERVER_IP/galene`
-   - Traefik: `http://SERVER_IP:8080/dashboard/`
+   - **With domain**: Check the workflow output for HTTPS URLs
+   - **Without domain**: Use `http://SERVER_IP/wireguard` and other HTTP URLs
 
 ---
 
@@ -152,6 +224,23 @@ After adding all secrets:
 ### Issue: Ansible connection fails
 
 **Solution**: Check that `SSH_PRIVATE_KEY` includes full key with headers
+
+### Issue: SSL certificate not issued
+
+**Solution**:
+
+- Verify `HETZNER_DNS_TOKEN` is valid
+- Ensure domain nameservers are updated to Hetzner DNS
+- Wait up to 24 hours for DNS propagation
+- Check Let's Encrypt rate limits at https://letsencrypt.org/docs/rate-limits/
+
+### Issue: Domain doesn't resolve
+
+**Solution**:
+
+- Update nameservers at your domain registrar
+- Use `dig yourdomain.com` to check DNS propagation
+- DNS changes can take 1-48 hours
 
 ---
 

@@ -27,6 +27,7 @@ env:
   TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
   TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
   TF_VAR_ssh_key_ids: ${{ secrets.SSH_KEY_IDS }}
+  TF_VAR_domain_name: ${{ secrets.DOMAIN_NAME }}
 
 jobs:
   terraform:
@@ -158,9 +159,8 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: ./ansible
         env:
-          WIREGUARD_DOMAIN: ${{ secrets.WIREGUARD_DOMAIN }}
-          WIREGUARD_ADMIN_USER: ${{ secrets.WIREGUARD_ADMIN_USER }}
-          WIREGUARD_ADMIN_PASSWORD: ${{ secrets.WIREGUARD_ADMIN_PASSWORD }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
         run: |
           ansible-playbook -i inventory.ini playbook.yml -v
           
@@ -168,8 +168,19 @@ jobs:
         run: |
           echo "🎉 WireGuard VPN Server deployed successfully!"
           echo "📍 Server IP: ${{ needs.terraform.outputs.public_ip }}"
-          echo "🌐 Access UI: https://${{ needs.terraform.outputs.public_ip }}"
-          if [ -n "${{ secrets.WIREGUARD_DOMAIN }}" ]; then
-            echo "🌐 Domain: https://${{ secrets.WIREGUARD_DOMAIN }}"
+          if [ -n "${{ secrets.DOMAIN_NAME }}" ]; then
+            echo "🌐 Domain: ${{ secrets.DOMAIN_NAME }}"
+            echo "🔒 WireGuard UI: https://vpn.${{ secrets.DOMAIN_NAME }}"
+            echo "📹 Galène Video: https://meet.${{ secrets.DOMAIN_NAME }}"
+            echo "📊 Traefik Dashboard: https://${{ secrets.DOMAIN_NAME }}:8080/dashboard/"
+            echo ""
+            echo "⚠️  DNS Configuration Required:"
+            echo "   Update nameservers at your domain registrar to:"
+            echo "   - hydrogen.ns.hetzner.com"
+            echo "   - oxygen.ns.hetzner.com"
+            echo "   - helium.ns.hetzner.de"
+          else
+            echo "🌐 WireGuard UI: http://${{ needs.terraform.outputs.public_ip }}/wireguard"
+            echo "📹 Galène Video: http://${{ needs.terraform.outputs.public_ip }}/galene"
+            echo "📊 Traefik Dashboard: http://${{ needs.terraform.outputs.public_ip }}:8080/dashboard/"
           fi
-          echo "⚠️  Remember to complete the initial setup via SSH"

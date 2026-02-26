@@ -1,605 +1,313 @@
----------
-
+---
 - name: Setup VPN and Services Server
-
-  hosts: all- name: Setup VPN and Services Server- name: Configure WireGuard VPN Server
-
+  hosts: all
   become: yes
+  gather_facts: yes
 
-  gather_facts: yes  hosts: all  hosts: wireguard
-
-
-
-  vars:  become: yes  become: yes
-
+  vars:
     server_ip: "{{ ansible_host }}"
-
-    wireguard_port: 51820  gather_facts: yes  gather_facts: yes
-
+    domain_name: "{{ lookup('env', 'DOMAIN_NAME') | default('', true) }}"
+    email_address: "{{ lookup('env', 'EMAIL_ADDRESS') | default('admin@' + domain_name, true) }}"
+    wireguard_port: 51820
     wireguard_ui_version: "v0.6.2"
-
-      
+    use_https: "{{ domain_name != '' }}"
 
   tasks:
-
-    - name: Wait for server to be ready  vars:  vars:
-
+    - name: Wait for server to be ready
       wait_for_connection:
-
-        timeout: 300    server_ip: "{{ ansible_host }}"    wireguard_domain: "{{ lookup('env', 'WIREGUARD_DOMAIN') | default('', true) }}"
-
+        timeout: 300
         delay: 5
-
-    wireguard_port: 51820    wireguard_admin_user: "{{ lookup('env', 'WIREGUARD_ADMIN_USER') | default('admin', true) }}"
 
     - name: Update apt cache
-
-      apt:    wireguard_ui_version: "v0.6.2"    wireguard_admin_password: "{{ lookup('env', 'WIREGUARD_ADMIN_PASSWORD') }}"
-
-        update_cache: yes
-
-        cache_valid_time: 3600        
-
-
-
-    - name: Install required packages  tasks:  tasks:
-
       apt:
+        update_cache: yes
+        cache_valid_time: 3600
 
-        name:    - name: Wait for server to be ready    - name: Wait for server to be ready
-
+    - name: Install required packages
+      apt:
+        name:
           - apt-transport-https
-
-          - ca-certificates      wait_for_connection:      wait_for_connection:
-
+          - ca-certificates
           - curl
-
-          - gnupg        timeout: 300        timeout: 300
-
+          - gnupg
           - lsb-release
-
-          - software-properties-common        delay: 5        delay: 5
-
+          - software-properties-common
           - wireguard
-
-          - wireguard-tools      
-
+          - wireguard-tools
           - iptables
-
-          - net-tools    - name: Update apt cache    - name: Update apt cache
-
+          - net-tools
           - htop
-
-          - vim      apt:      apt:
-
+          - vim
           - wget
-
-          - git        update_cache: yes        update_cache: yes
-
+          - git
           - python3-pip
-
-        state: present        cache_valid_time: 3600        cache_valid_time: 3600
-
-
-
-    # ========================================    
-
-    # Docker Installation
-
-    # ========================================    - name: Install required packages    - name: Clean up broken WireGuard UI user database
-
-    - name: Add Docker GPG key
-
-      apt_key:      apt:      shell: |
-
-        url: https://download.docker.com/linux/ubuntu/gpg
-
-        state: present        name:        if [ -f /usr/local/share/wireguard-ui/db/users/\$admin_username.json ]; then
-
-
-
-    - name: Add Docker repository          - apt-transport-https          systemctl stop wireguard-ui
-
-      apt_repository:
-
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"          - ca-certificates          rm -f /usr/local/share/wireguard-ui/db/users/*.json
-
         state: present
 
-          - curl          systemctl start wireguard-ui
+    # Docker Installation
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
 
     - name: Install Docker
-
-      apt:          - gnupg        fi
-
+      apt:
         name:
-
-          - docker-ce          - lsb-release      args:
-
+          - docker-ce
           - docker-ce-cli
-
-          - containerd.io          - software-properties-common        executable: /bin/bash
-
+          - containerd.io
           - docker-compose-plugin
-
-        state: present          - wireguard      
-
+        state: present
         update_cache: yes
 
-          - wireguard-tools    - name: Ensure WireGuard is running
-
     - name: Start and enable Docker
-
-      systemd:          - iptables      systemd:
-
+      systemd:
         name: docker
-
-        state: started          - net-tools        name: wg-quick@wg0
-
+        state: started
         enabled: yes
 
-          - htop        state: started
-
     - name: Install Docker SDK for Python
-
-      pip:          - vim        enabled: yes
-
+      pip:
         name:
-
-          - docker          - wget      ignore_errors: yes
-
+          - docker
           - docker-compose
-
-        state: present          - git      
-
-
-
-    # ========================================        state: present    - name: Check if WireGuard UI is installed
+        state: present
 
     # WireGuard Configuration
-
-    # ========================================      stat:
-
     - name: Enable IP forwarding
-
-      sysctl:    # ========================================        path: /usr/local/bin/wireguard-ui
-
+      sysctl:
         name: "{{ item }}"
-
-        value: '1'    # Docker Installation      register: wireguard_ui_check
-
+        value: '1'
         sysctl_set: yes
-
-        state: present    # ========================================      
-
+        state: present
         reload: yes
-
-      loop:    - name: Add Docker GPG key    - name: Ensure WireGuard UI is running
-
+      loop:
         - net.ipv4.ip_forward
+        - net.ipv6.conf.all.forwarding
 
-        - net.ipv6.conf.all.forwarding      apt_key:      systemd:
-
-
-
-    - name: Create WireGuard directory        url: https://download.docker.com/linux/ubuntu/gpg        name: wireguard-ui
-
+    - name: Create WireGuard directory
       file:
-
-        path: /etc/wireguard        state: present        state: started
-
+        path: /etc/wireguard
         state: directory
+        mode: '0700'
 
-        mode: '0700'        enabled: yes
-
-
-
-    - name: Generate WireGuard server private key    - name: Add Docker repository      when: wireguard_ui_check.stat.exists
-
+    - name: Generate WireGuard server private key
       shell: wg genkey
-
-      register: wg_private_key      apt_repository:      
-
+      register: wg_private_key
       changed_when: false
+      no_log: true
 
-      no_log: true        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"    - name: Configure Caddy for HTTP on port 80
-
-
-
-    - name: Generate WireGuard server public key        state: present      copy:
-
+    - name: Generate WireGuard server public key
       shell: echo "{{ wg_private_key.stdout }}" | wg pubkey
-
-      register: wg_public_key        content: |
-
+      register: wg_public_key
       changed_when: false
-
-    - name: Install Docker          # Listen on HTTP port 80 (no HTTPS for IP addresses)
 
     - name: Create WireGuard server configuration
-
-      copy:      apt:          :80 {
-
+      copy:
         content: |
-
-          [Interface]        name:            reverse_proxy [::1]:5000
-
+          [Interface]
           Address = 10.0.0.1/24
-
-          ListenPort = {{ wireguard_port }}          - docker-ce          }
-
+          ListenPort = {{ wireguard_port }}
           PrivateKey = {{ wg_private_key.stdout }}
 
-                    - docker-ce-cli        dest: /etc/caddy/Caddyfile
-
-          # NAT for client traffic
-
-          PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; ip6tables -A FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE          - containerd.io        owner: root
-
+          PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; ip6tables -A FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
           PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; ip6tables -D FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-
-        dest: /etc/wireguard/wg0.conf          - docker-compose-plugin        group: root
-
+        dest: /etc/wireguard/wg0.conf
         mode: '0600'
+      no_log: true
 
-      no_log: true        state: present        mode: '0644'
-
-
-
-    - name: Start and enable WireGuard        update_cache: yes      register: caddy_config_changed
-
+    - name: Start and enable WireGuard
       systemd:
-
-        name: wg-quick@wg0      
-
+        name: wg-quick@wg0
         state: started
-
-        enabled: yes    - name: Start and enable Docker    - name: Restart Caddy if config changed
-
-
-
-    # ========================================      systemd:      systemd:
+        enabled: yes
 
     # Docker Compose for Services
-
-    # ========================================        name: docker        name: caddy
-
     - name: Create docker compose directory
-
-      file:        state: started        state: restarted
-
+      file:
         path: /opt/services
-
-        state: directory        enabled: yes        enabled: yes
-
+        state: directory
         mode: '0755'
-
-      when: caddy_config_changed.changed
 
     - name: Create service directories
-
-      file:    - name: Install Docker SDK for Python      
-
+      file:
         path: "{{ item }}"
-
-        state: directory      pip:    - name: Ensure Caddy is running
-
+        state: directory
         mode: '0755'
-
-      loop:        name:      systemd:
-
+      loop:
         - /opt/services/wireguard-ui
-
-        - /opt/services/galene/groups          - docker        name: caddy
-
+        - /opt/services/galene/groups
         - /opt/services/galene/data
+        - /opt/services/traefik/dynamic
+        - /opt/services/traefik/acme
 
-        - /opt/services/traefik/dynamic          - docker-compose        state: started
-
-
-
-    - name: Create Traefik static configuration        state: present        enabled: yes
-
+    - name: Create Traefik static configuration with HTTPS
       copy:
-
-        content: |    
-
+        content: |
           [global]
-
-            checkNewVersion = false    # ========================================    - name: Restart WireGuard UI and Caddy to ensure proper session handling
-
+            checkNewVersion = false
             sendAnonymousUsage = false
 
-    # WireGuard Configuration      systemd:
-
           [api]
-
-            dashboard = true    # ========================================        name: "{{ item }}"
-
-            insecure = true
-
-    - name: Enable IP forwarding        state: restarted
+            dashboard = true
+            insecure = false
 
           [entryPoints]
-
-            [entryPoints.web]      sysctl:      loop:
-
+            [entryPoints.web]
               address = ":80"
+              {% if use_https %}
+              [entryPoints.web.http.redirections.entryPoint]
+                to = "websecure"
+                scheme = "https"
+              {% endif %}
 
-        name: "{{ item }}"        - wireguard-ui
+            [entryPoints.websecure]
+              address = ":443"
+
+            [entryPoints.traefik]
+              address = ":8080"
+
+          {% if use_https %}
+          [certificatesResolvers.letsencrypt.acme]
+            email = "{{ email_address }}"
+            storage = "/acme/acme.json"
+            [certificatesResolvers.letsencrypt.acme.httpChallenge]
+              entryPoint = "web"
+          {% endif %}
 
           [providers]
-
-            [providers.docker]        value: '1'        - caddy
-
+            [providers.docker]
               endpoint = "unix:///var/run/docker.sock"
-
-              exposedByDefault = false        sysctl_set: yes      when: wireguard_ui_check.stat.exists
-
-
-
-          [log]        state: present      
-
-            level = "INFO"
-
-        dest: /opt/services/traefik/traefik.toml        reload: yes    - name: Install useful packages
-
-        mode: '0644'
-
-      loop:      apt:
-
-    - name: Create Docker Compose file
-
-      copy:        - net.ipv4.ip_forward        name:
-
-        content: |
-
-          services:        - net.ipv6.conf.all.forwarding          - htop
-
-            traefik:
-
-              image: traefik:v2.11          - vim
-
-              container_name: traefik
-
-              restart: unless-stopped    - name: Create WireGuard directory          - curl
-
-              ports:
-
-                - "80:80"      file:          - wget
-
-                - "8080:8080"
-
-              volumes:        path: /etc/wireguard          - net-tools
-
-                - /var/run/docker.sock:/var/run/docker.sock:ro
-
-                - /opt/services/traefik/traefik.toml:/etc/traefik/traefik.toml:ro        state: directory          - ufw
-
-                - /opt/services/traefik/dynamic:/etc/traefik/dynamic:ro
-
-              networks:        mode: '0700'        state: present
-
-                - services
-
-        
-
-            wireguard-ui:
-
-              image: ngoduykhanh/wireguard-ui:{{ wireguard_ui_version }}    - name: Generate WireGuard server private key    - name: Display WireGuard status
-
-              container_name: wireguard-ui
-
-              restart: unless-stopped      shell: wg genkey      command: wg show
-
-              cap_add:
-
-                - NET_ADMIN      register: wg_private_key      register: wg_status
-
-              environment:
-
-                - WGUI_USERNAME=admin      changed_when: false      changed_when: false
-
-                - WGUI_PASSWORD=admin
-
-                - WGUI_ENDPOINT_ADDRESS={{ server_ip }}      no_log: true      failed_when: false
-
-                - WGUI_DNS=1.1.1.1,1.0.0.1
-
-                - WGUI_MTU=1420      
-
-                - WGUI_PERSISTENT_KEEPALIVE=25
-
-                - WGUI_SERVER_INTERFACE_ADDRESSES=10.0.0.1/24    - name: Generate WireGuard server public key    - name: Show WireGuard status
-
-                - WGUI_SERVER_LISTEN_PORT={{ wireguard_port }}
-
-                - WGUI_SERVER_POST_UP_SCRIPT=iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE      shell: echo "{{ wg_private_key.stdout }}" | wg pubkey      debug:
-
-                - WGUI_SERVER_POST_DOWN_SCRIPT=iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-
-              volumes:      register: wg_public_key        var: wg_status.stdout_lines
-
-                - /opt/services/wireguard-ui:/app/db
-
-                - /etc/wireguard:/etc/wireguard      changed_when: false      when: wg_status.rc == 0
-
-              networks:
-
-                - services      
-
-              labels:
-
-                - "traefik.enable=true"    - name: Create WireGuard server configuration    - name: Display server information
-
-                - "traefik.http.routers.wireguard.rule=Host(`{{ server_ip }}`) && PathPrefix(`/wireguard`)"
-
-                - "traefik.http.routers.wireguard.entrypoints=web"      copy:      debug:
-
-                - "traefik.http.services.wireguard.loadbalancer.server.port=5000"
-
-                - "traefik.http.middlewares.wireguard-strip.stripprefix.prefixes=/wireguard"        content: |        msg:
-
-                - "traefik.http.routers.wireguard.middlewares=wireguard-strip"
-
-          [Interface]          - "WireGuard VPN Server is ready!"
-
-            galene:
-
-              image: ghcr.io/galene/galene:latest          Address = 10.0.0.1/24          - "Access WireGuard UI at: http://{{ ansible_host }}"
-
-              container_name: galene
-
-              restart: unless-stopped          ListenPort = {{ wireguard_port }}          - "Complete the initial setup wizard to create your admin account"
-
-              command: ["-http", "0.0.0.0:8443", "-insecure"]
-
-              volumes:          PrivateKey = {{ wg_private_key.stdout }}          - "Remember to configure your domain DNS if using one"
-
-                - /opt/services/galene/groups:/opt/galene/groups
-
-                - /opt/services/galene/data:/opt/galene/data          
-
-              networks:          # NAT for client traffic
-
-                - services          PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; ip6tables -A FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-
-              labels:          PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; ip6tables -D FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-
-                - "traefik.enable=true"        dest: /etc/wireguard/wg0.conf
-
-                - "traefik.http.routers.galene.rule=Host(`{{ server_ip }}`) && PathPrefix(`/galene`)"        mode: '0600'
-
-                - "traefik.http.routers.galene.entrypoints=web"      no_log: true
-
-                - "traefik.http.services.galene.loadbalancer.server.port=8443"
-
-                - "traefik.http.middlewares.galene-strip.stripprefix.prefixes=/galene"    - name: Start and enable WireGuard
-
-                - "traefik.http.routers.galene.middlewares=galene-strip"      systemd:
-
-        name: wg-quick@wg0
-
-          networks:        state: started
-
-            services:        enabled: yes
-
-              name: services_network
-
-              driver: bridge    # ========================================
-
-        dest: /opt/services/docker-compose.yml    # Docker Compose for Services
-
-        mode: '0644'    # ========================================
-
-    - name: Create docker compose directory
-
-    - name: Create Galène default group configuration      file:
-
-      copy:        path: /opt/services
-
-        content: |        state: directory
-
-          {        mode: '0755'
-
-            "op": [{"password": "admin"}],
-
-            "presenter": [{}],    - name: Create service directories
-
-            "public": true,      file:
-
-            "description": "Public meeting room",        path: "{{ item }}"
-
-            "allow-recording": true        state: directory
-
-          }        mode: '0755'
-
-        dest: /opt/services/galene/groups/public.json      loop:
-
-        mode: '0644'        - /opt/services/wireguard-ui
-
-        - /opt/services/galene/groups
-
-    - name: Pull and start Docker services        - /opt/services/galene/data
-
-      shell: |        - /opt/services/traefik/dynamic
-
-        cd /opt/services
-
-        docker compose pull    - name: Create Traefik static configuration
-
-        docker compose up -d      copy:
-
-      args:        content: |
-
-        executable: /bin/bash          [global]
-
-            checkNewVersion = false
-
-    - name: Wait for services to be ready            sendAnonymousUsage = false
-
-      wait_for:
-
-        port: "{{ item }}"          [api]
-
-        host: 127.0.0.1            dashboard = true
-
-        timeout: 60            insecure = true
-
-        delay: 5
-
-      loop:          [entryPoints]
-
-        - 80            [entryPoints.web]
-
-        - 8080              address = ":80"
-
-
-
-    - name: Display WireGuard status          [providers]
-
-      command: wg show            [providers.docker]
-
-      register: wg_status              endpoint = "unix:///var/run/docker.sock"
-
-      changed_when: false              exposedByDefault = false
-
-      failed_when: false
+              exposedByDefault = false
 
           [log]
+            level = "INFO"
+        dest: /opt/services/traefik/traefik.toml
+        mode: '0644'
+      when: use_https
 
-    - name: Show server information            level = "INFO"
+    - name: Create Traefik static configuration without HTTPS (IP only)
+      copy:
+        content: |
+          [global]
+            checkNewVersion = false
+            sendAnonymousUsage = false
 
-      debug:        dest: /opt/services/traefik/traefik.toml
+          [api]
+            dashboard = true
+            insecure = true
 
-        msg:        mode: '0644'
+          [entryPoints]
+            [entryPoints.web]
+              address = ":80"
 
-          - "=============================================="
+          [providers]
+            [providers.docker]
+              endpoint = "unix:///var/run/docker.sock"
+              exposedByDefault = false
 
-          - "VPN and Services Server is Ready!"    - name: Create Docker Compose file
+          [log]
+            level = "INFO"
+        dest: /opt/services/traefik/traefik.toml
+        mode: '0644'
+      when: not use_https
 
-          - "=============================================="      copy:
+    - name: Create Docker Compose file with HTTPS
+      copy:
+        content: |
+          services:
+            traefik:
+              image: traefik:v2.11
+              container_name: traefik
+              restart: unless-stopped
+              ports:
+                - "80:80"
+                - "443:443"
+                - "8080:8080"
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+                - /opt/services/traefik/traefik.toml:/etc/traefik/traefik.toml:ro
+                - /opt/services/traefik/dynamic:/etc/traefik/dynamic:ro
+                - /opt/services/traefik/acme:/acme
+              networks:
+                - services
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.dashboard.rule=Host(`{{ domain_name }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+                - "traefik.http.routers.dashboard.service=api@internal"
+                - "traefik.http.routers.dashboard.entrypoints=websecure"
+                - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
 
-          - "Server IP: {{ server_ip }}"        content: |
+            wireguard-ui:
+              image: ngoduykhanh/wireguard-ui:{{ wireguard_ui_version }}
+              container_name: wireguard-ui
+              restart: unless-stopped
+              cap_add:
+                - NET_ADMIN
+              environment:
+                - WGUI_USERNAME=admin
+                - WGUI_PASSWORD=admin
+                - WGUI_ENDPOINT_ADDRESS=vpn.{{ domain_name }}
+                - WGUI_DNS=1.1.1.1,1.0.0.1
+                - WGUI_MTU=1420
+                - WGUI_PERSISTENT_KEEPALIVE=25
+                - WGUI_SERVER_INTERFACE_ADDRESSES=10.0.0.1/24
+                - WGUI_SERVER_LISTEN_PORT={{ wireguard_port }}
+                - WGUI_SERVER_POST_UP_SCRIPT=iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+                - WGUI_SERVER_POST_DOWN_SCRIPT=iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+              volumes:
+                - /opt/services/wireguard-ui:/app/db
+                - /etc/wireguard:/etc/wireguard
+              networks:
+                - services
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.wireguard.rule=Host(`vpn.{{ domain_name }}`)"
+                - "traefik.http.routers.wireguard.entrypoints=websecure"
+                - "traefik.http.services.wireguard.loadbalancer.server.port=5000"
+                - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
 
-          - ""          services:
+            galene:
+              image: ghcr.io/galene/galene:latest
+              container_name: galene
+              restart: unless-stopped
+              command: ["-http", "0.0.0.0:8443"]
+              volumes:
+                - /opt/services/galene/groups:/opt/galene/groups
+                - /opt/services/galene/data:/opt/galene/data
+              networks:
+                - services
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.galene.rule=Host(`meet.{{ domain_name }}`)"
+                - "traefik.http.routers.galene.entrypoints=websecure"
+                - "traefik.http.services.galene.loadbalancer.server.port=8443"
+                - "traefik.http.routers.galene.tls.certresolver=letsencrypt"
 
-          - "Services:"            traefik:
+          networks:
+            services:
+              name: services_network
+              driver: bridge
+        dest: /opt/services/docker-compose.yml
+        mode: '0644'
+      when: use_https
 
-          - "  - Traefik Dashboard: http://{{ server_ip }}:8080/dashboard/"              image: traefik:v2.11
-
-          - "  - WireGuard UI: http://{{ server_ip }}/wireguard"              container_name: traefik
-
-          - "    Default login: admin / admin"              restart: unless-stopped
-
-          - "  - Galène Video: http://{{ server_ip }}/galene"              ports:
-
-          - "    Room: public (operator password: admin)"                - "80:80"
-
-          - ""                - "8080:8080"
-
-          - "=============================================="              volumes:
-
+    - name: Create Docker Compose file without HTTPS (IP only)
+      copy:
+        content: |
+          services:
+            traefik:
+              image: traefik:v2.11
+              container_name: traefik
+              restart: unless-stopped
+              ports:
+                - "80:80"
+                - "8080:8080"
+              volumes:
                 - /var/run/docker.sock:/var/run/docker.sock:ro
                 - /opt/services/traefik/traefik.toml:/etc/traefik/traefik.toml:ro
                 - /opt/services/traefik/dynamic:/etc/traefik/dynamic:ro
@@ -660,6 +368,7 @@
               driver: bridge
         dest: /opt/services/docker-compose.yml
         mode: '0644'
+      when: not use_https
 
     - name: Create Galène default group configuration
       copy:
@@ -673,6 +382,13 @@
           }
         dest: /opt/services/galene/groups/public.json
         mode: '0644'
+
+    - name: Set correct permissions for acme.json
+      file:
+        path: /opt/services/traefik/acme/acme.json
+        state: touch
+        mode: '0600'
+      when: use_https
 
     - name: Pull and start Docker services
       shell: |
@@ -690,7 +406,7 @@
         delay: 5
       loop:
         - 80
-        - 8080
+      ignore_errors: yes
 
     - name: Display WireGuard status
       command: wg show
@@ -698,19 +414,46 @@
       changed_when: false
       failed_when: false
 
-    - name: Show server information
+    - name: Show server information with domain
       debug:
         msg:
           - "=============================================="
-          - "VPN and Services Server is Ready!"
+          - "VPN and Services Server is Ready with HTTPS!"
+          - "=============================================="
+          - "Domain: {{ domain_name }}"
+          - "Server IP: {{ server_ip }}"
+          - ""
+          - "Services:"
+          - "  - Traefik Dashboard: https://{{ domain_name }}:8080/dashboard/"
+          - "  - WireGuard UI: https://vpn.{{ domain_name }}"
+          - "    Default login: admin / admin (CHANGE THIS!)"
+          - "  - Galène Video: https://meet.{{ domain_name }}"
+          - "    Room: public (operator password: admin)"
+          - ""
+          - "DNS Configuration:"
+          - "  Update your domain's nameservers to:"
+          - "    - hydrogen.ns.hetzner.com"
+          - "    - oxygen.ns.hetzner.com"
+          - "    - helium.ns.hetzner.de"
+          - ""
+          - "=============================================="
+      when: use_https
+
+    - name: Show server information without domain
+      debug:
+        msg:
+          - "=============================================="
+          - "VPN and Services Server is Ready (HTTP only)!"
           - "=============================================="
           - "Server IP: {{ server_ip }}"
           - ""
           - "Services:"
           - "  - Traefik Dashboard: http://{{ server_ip }}:8080/dashboard/"
           - "  - WireGuard UI: http://{{ server_ip }}/wireguard"
-          - "    Default login: admin / admin"
+          - "    Default login: admin / admin (CHANGE THIS!)"
           - "  - Galène Video: http://{{ server_ip }}/galene"
           - "    Room: public (operator password: admin)"
           - ""
+          - "Note: Using IP address. For HTTPS, configure DOMAIN_NAME."
           - "=============================================="
+      when: not use_https

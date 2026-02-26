@@ -34,6 +34,7 @@ jobs:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
           TF_VAR_ssh_key_ids: ${{ secrets.SSH_KEY_IDS }}
+          TF_VAR_domain_name: ${{ secrets.DOMAIN_NAME }}
         run: terraform destroy -auto-approve
 
   deploy:
@@ -61,6 +62,7 @@ jobs:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_firewall_name: ${{ secrets.FIREWALL_NAME }}
           TF_VAR_ssh_key_ids: ${{ secrets.SSH_KEY_IDS }}
+          TF_VAR_domain_name: ${{ secrets.DOMAIN_NAME }}
         run: terraform apply -auto-approve
 
       - name: Get Server IP
@@ -133,6 +135,9 @@ jobs:
 
       - name: Run Ansible Playbook
         working-directory: ./ansible
+        env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
         run: ansible-playbook -i inventory.ini playbook.yml
 
       - name: Display Access Information
@@ -141,7 +146,24 @@ jobs:
           echo "WireGuard VPN Server Deployed Successfully!"
           echo "================================================"
           echo "Server IP: ${{ steps.server_ip.outputs.ip }}"
-          echo "Access WireGuard UI at: http://${{ steps.server_ip.outputs.ip }}"
+          if [ -n "${{ secrets.DOMAIN_NAME }}" ]; then
+            echo ""
+            echo "🌐 Domain: ${{ secrets.DOMAIN_NAME }}"
+            echo "🔒 WireGuard UI: https://vpn.${{ secrets.DOMAIN_NAME }}"
+            echo "📹 Galène Video: https://meet.${{ secrets.DOMAIN_NAME }}"
+            echo "📊 Traefik Dashboard: https://${{ secrets.DOMAIN_NAME }}:8080/dashboard/"
+            echo ""
+            echo "⚠️  DNS Configuration Required:"
+            echo "   Update nameservers at your domain registrar to:"
+            echo "   - hydrogen.ns.hetzner.com"
+            echo "   - oxygen.ns.hetzner.com"
+            echo "   - helium.ns.hetzner.de"
+          else
+            echo ""
+            echo "🌐 WireGuard UI: http://${{ steps.server_ip.outputs.ip }}/wireguard"
+            echo "📹 Galène Video: http://${{ steps.server_ip.outputs.ip }}/galene"
+            echo "📊 Traefik Dashboard: http://${{ steps.server_ip.outputs.ip }}:8080/dashboard/"
+          fi
           echo ""
-          echo "IMPORTANT: Complete the setup wizard at the URL above"
+          echo "Default credentials: admin / admin (CHANGE IMMEDIATELY!)"
           echo "================================================"
