@@ -262,6 +262,7 @@
               environment:
                 - WGUI_USERNAME=admin
                 - WGUI_PASSWORD=admin
+                - WGUI_SESSION_SECRET=supersecretkey123456789012345678901234567890
                 - WGUI_ENDPOINT_ADDRESS=vpn.{{ domain_name }}
                 - WGUI_DNS=1.1.1.1,1.0.0.1
                 - WGUI_MTU=1420
@@ -334,6 +335,7 @@
               environment:
                 - WGUI_USERNAME=admin
                 - WGUI_PASSWORD=admin
+                - WGUI_SESSION_SECRET=supersecretkey123456789012345678901234567890
                 - WGUI_ENDPOINT_ADDRESS={{ server_ip }}
                 - WGUI_DNS=1.1.1.1,1.0.0.1
                 - WGUI_MTU=1420

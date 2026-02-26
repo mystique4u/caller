@@ -494,14 +494,77 @@ jobs:
           echo "⏳ Waiting 60 seconds for services to fully initialize..."
           sleep 60
           
-      - name: Check server connectivity
+      - name: Setup SSH key
         run: |
-          echo "🔍 Testing server connectivity..."
-          if ping -c 3 ${{ needs.terraform.outputs.public_ip }} > /dev/null 2>&1; then
-            echo "✅ Server is reachable"
-          else
-            echo "::error::Server is not responding to ping"
-            exit 1
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ needs.terraform.outputs.public_ip }} >> ~/.ssh/known_hosts
+          
+      - name: Check Docker services on server
+        run: |
+          echo "🔍 Checking Docker containers status..."
+          ssh -o StrictHostKeyChecking=no root@${{ needs.terraform.outputs.public_ip }} << 'EOF'
+            echo "=== Docker Container Status ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo ""
+            
+            echo "=== Checking if all services are running ==="
+            required_containers="traefik wireguard-ui galene"
+            all_running=true
+            
+            for container in $required_containers; do
+              if docker ps --filter "name=$container" --filter "status=running" | grep -q "$container"; then
+                echo "✅ $container is running"
+              else
+                echo "❌ $container is NOT running"
+                all_running=false
+              fi
+            done
+            
+            echo ""
+            echo "=== Docker Compose Logs (last 20 lines) ==="
+            cd /opt/services
+            docker compose logs --tail=20
+            
+            if [ "$all_running" = false ]; then
+              exit 1
+            fi
+          EOF
+          
+      - name: Check Traefik routing and labels
+        run: |
+          echo "🔍 Checking Traefik labels and configuration..."
+          ssh -o StrictHostKeyChecking=no root@${{ needs.terraform.outputs.public_ip }} << 'EOF'
+            echo "=== WireGuard UI Labels ==="
+            docker inspect wireguard-ui --format='{{range $key, $value := .Config.Labels}}{{$key}}={{$value}}{{"\n"}}{{end}}' | grep traefik || echo "No Traefik labels found!"
+            
+            echo ""
+            echo "=== Galène Labels ==="
+            docker inspect galene --format='{{range $key, $value := .Config.Labels}}{{$key}}={{$value}}{{"\n"}}{{end}}' | grep traefik || echo "No Traefik labels found!"
+            
+            echo ""
+            echo "=== Traefik Container Logs (last 30 lines) ==="
+            docker logs traefik --tail=30
+          EOF
+          
+      - name: Check DNS resolution
+        run: |
+          domain="${{ secrets.DOMAIN_NAME }}"
+          if [ -n "$domain" ]; then
+            echo "🔍 Checking DNS resolution for $domain..."
+            
+            echo "=== Root Domain ==="
+            dig +short "$domain" || echo "⚠️ DNS not resolved yet"
+            
+            echo "=== VPN Subdomain ==="
+            dig +short "vpn.$domain" || echo "⚠️ DNS not resolved yet"
+            
+            echo "=== Meet Subdomain ==="
+            dig +short "meet.$domain" || echo "⚠️ DNS not resolved yet"
+            
+            echo ""
+            echo "Expected IP: ${{ needs.terraform.outputs.public_ip }}"
           fi
           
       - name: Check HTTP/HTTPS services
