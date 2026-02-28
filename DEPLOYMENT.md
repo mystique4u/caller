@@ -365,9 +365,10 @@ The workflow will automatically run health checks:
 
 ### Authentication & User Management
 
-Jitsi Meet is deployed with **authentication enabled** by default:
-- Only registered users can **create** meetings
-- Guests can **join** meetings (without login)
+Jitsi Meet is deployed with **fully private authentication**:
+- ✅ **Only registered users** can create meetings
+- ✅ **Only registered users** can join meetings
+- ❌ **No guest access** - everyone must authenticate
 
 ### Admin Credentials
 
@@ -414,9 +415,12 @@ docker exec jitsi-prosody ls -la /config/data/auth%2emeet%2ejitsi/accounts/
 ### How to Use Jitsi Meet
 
 1. **Go to:** `https://meet.YOUR_DOMAIN`
-2. **Login** with your credentials (admin or any registered user)
+2. **Login** with your credentials (you will be prompted immediately)
 3. **Enter a room name** (e.g., "TeamMeeting")
 4. **Click "Start meeting"**
+5. **Share the meeting URL** with other registered users (they must login to join)
+
+⚠️ **Important:** All participants must have registered accounts. Create accounts for each team member using the commands above.
 5. **Share the meeting URL** with guests (they can join without login)
 
 ### Security Best Practices
