@@ -14,15 +14,21 @@ This project uses a comprehensive CI/CD pipeline with multiple stages:
 Go to your repository → Settings → Secrets and variables → Actions → New repository secret
 
 Add these secrets:
+
+**Required:**
 - `TF_API_TOKEN` - Terraform Cloud API token
 - `HCLOUD_TOKEN` - Hetzner Cloud API token
 - `FIREWALL_NAME` - Name for your firewall (e.g., "vpn-firewall")
 - `SSH_KEY_IDS` - Hetzner SSH key IDs (comma-separated, e.g., "108153935")
 - `SSH_PRIVATE_KEY` - Your SSH private key for Ansible
-- `DOMAIN_NAME` - Your domain (e.g., "itin.buzz") - optional
-- `EMAIL_ADDRESS` - Email for Let's Encrypt - optional
+- `DOMAIN_NAME` - Your domain (e.g., "itin.buzz")
+- `EMAIL_ADDRESS` - Email for Let's Encrypt certificates
 
-**Optional for testing:**
+**Jitsi Meet Authentication:**
+- `JITSI_ADMIN_USER` - Admin username (e.g., "admin")
+- `JITSI_ADMIN_PASSWORD` - Secure password for admin user
+
+**Optional:**
 - `LETSENCRYPT_ENV` - Set to `staging` for test certificates (avoids rate limits)
   - Use `staging` for testing deployments
   - Use `production` (default) for real certificates
@@ -363,13 +369,19 @@ Jitsi Meet is deployed with **authentication enabled** by default:
 - Only registered users can **create** meetings
 - Guests can **join** meetings (without login)
 
-### Default Admin Credentials
+### Admin Credentials
 
-**URL:** `https://meet.YOUR_DOMAIN`  
-**Username:** `admin@auth.meet.jitsi`  
-**Default Password:** `ChangeMe123!`
+Admin credentials are configured via **GitHub Secrets**:
 
-⚠️ **Change the password immediately after first deployment!**
+1. Set `JITSI_ADMIN_USER` in GitHub Secrets (e.g., "admin")
+2. Set `JITSI_ADMIN_PASSWORD` in GitHub Secrets (use a strong password)
+3. Deploy the infrastructure
+
+**Login URL:** `https://meet.YOUR_DOMAIN`  
+**Username:** `YOUR_ADMIN_USER@auth.meet.jitsi`  
+**Password:** (as set in GitHub Secrets)
+
+⚠️ **If secrets are not set, no admin user will be created automatically**
 
 ### Managing Users
 
@@ -407,16 +419,12 @@ docker exec jitsi-prosody ls -la /config/data/auth%2emeet%2ejitsi/accounts/
 4. **Click "Start meeting"**
 5. **Share the meeting URL** with guests (they can join without login)
 
-### Customize Admin Password
+### Security Best Practices
 
-To set a custom admin password during deployment, set the `JITSI_ADMIN_PASSWORD` environment variable:
-
-```bash
-# In your GitHub Secrets, add:
-JITSI_ADMIN_PASSWORD=YourSecurePassword123!
-```
-
-Then redeploy. If not set, the default password `ChangeMe123!` will be used.
+- ✅ Use **strong passwords** (minimum 16 characters, mix of letters, numbers, symbols)
+- ✅ Store credentials **only in GitHub Secrets**, never in code or documentation
+- ✅ Create separate user accounts for each team member
+- ✅ Rotate passwords periodically
 
 ## 📚 Additional Resources
 

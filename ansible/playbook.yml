@@ -415,25 +415,26 @@
         timeout: 30
       delegate_to: localhost
 
-    - name: Create default Jitsi admin user
+    - name: Create Jitsi admin user
       shell: |
-        docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register admin auth.meet.jitsi {{ lookup('env', 'JITSI_ADMIN_PASSWORD') | default('ChangeMe123!', true) }}
+        docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register {{ jitsi_admin_user }} auth.meet.jitsi {{ jitsi_admin_password }}
       register: create_user_result
       failed_when: false
       changed_when: "'already registered' not in create_user_result.stderr"
+      when: jitsi_admin_user is defined and jitsi_admin_password is defined
 
     - name: Display admin credentials
       debug:
         msg:
           - "=========================================="
-          - "Jitsi Meet Admin Credentials"
+          - "Jitsi Meet Admin Access"
           - "=========================================="
           - "URL: https://meet.{{ domain_name }}"
-          - "Username: admin@auth.meet.jitsi"
-          - "Password: {{ lookup('env', 'JITSI_ADMIN_PASSWORD') | default('ChangeMe123!', true) }}"
+          - "Username: {{ jitsi_admin_user }}@auth.meet.jitsi"
           - "=========================================="
-          - "⚠️  Change the password after first login!"
+          - "⚠️  Password is stored in GitHub Secrets"
           - "=========================================="
+      when: jitsi_admin_user is defined
       ignore_errors: yes
 
     - name: Display WireGuard status
