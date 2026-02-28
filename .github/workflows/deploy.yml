@@ -534,6 +534,8 @@ jobs:
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           LETSENCRYPT_ENV: ${{ secrets.LETSENCRYPT_ENV || 'production' }}
+          JITSI_ADMIN_USER: ${{ secrets.JITSI_ADMIN_USER }}
+          JITSI_ADMIN_PASSWORD: ${{ secrets.JITSI_ADMIN_PASSWORD }}
         run: |
           echo "🔐 Let's Encrypt Environment: ${LETSENCRYPT_ENV}"
           if [ "${LETSENCRYPT_ENV}" == "staging" ]; then
@@ -541,7 +543,17 @@ jobs:
           else
             echo "✅ Using Let's Encrypt PRODUCTION (trusted certificates)"
           fi
-          ansible-playbook -i inventory.ini playbook.yml -v
+          
+          # Build extra-vars for Ansible
+          EXTRA_VARS=""
+          if [ -n "$JITSI_ADMIN_USER" ] && [ -n "$JITSI_ADMIN_PASSWORD" ]; then
+            EXTRA_VARS="-e jitsi_admin_user=$JITSI_ADMIN_USER -e jitsi_admin_password=$JITSI_ADMIN_PASSWORD"
+            echo "✅ Jitsi admin user will be created: $JITSI_ADMIN_USER"
+          else
+            echo "⚠️ JITSI_ADMIN_USER or JITSI_ADMIN_PASSWORD not set - skipping admin user creation"
+          fi
+          
+          ansible-playbook -i inventory.ini playbook.yml -v $EXTRA_VARS
 
   health-check:
     name: Post-Deployment Health Checks
