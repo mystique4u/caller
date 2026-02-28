@@ -456,20 +456,12 @@
       args:
         creates: /opt/services/matrix/synapse/homeserver.yaml
 
-    - name: Configure Matrix Synapse database
-      lineinfile:
-        path: /opt/services/matrix/synapse/homeserver.yaml
-        regexp: '^  name: sqlite3'
-        line: '  name: psycopg2'
-        backup: yes
-      when: postgres_password is defined
-
-    - name: Add PostgreSQL connection to Matrix config
-      blockinfile:
-        path: /opt/services/matrix/synapse/homeserver.yaml
-        marker: "# {mark} ANSIBLE MANAGED POSTGRES CONFIG"
-        insertafter: '^database:'
-        block: |
+    - name: Configure Matrix Synapse PostgreSQL database
+      shell: |
+        # Create a proper database configuration block
+        cat > /tmp/db_config.yml << 'EOF'
+        database:
+          name: psycopg2
           args:
             user: synapse
             password: {{ postgres_password }}
@@ -478,6 +470,23 @@
             port: 5432
             cp_min: 5
             cp_max: 10
+        EOF
+        
+        # Remove the old database section (everything from 'database:' until next top-level key or EOF)
+        awk '
+          /^database:/ { skip=1; next }
+          /^[a-z_]+:/ && skip { skip=0 }
+          !skip { print }
+        ' /opt/services/matrix/synapse/homeserver.yaml > /tmp/homeserver_no_db.yaml
+        
+        # Merge: add database config at the beginning (after initial comments)
+        (grep "^#" /opt/services/matrix/synapse/homeserver.yaml || true
+         cat /tmp/db_config.yml
+         echo ""
+         grep -v "^#" /tmp/homeserver_no_db.yaml) > /opt/services/matrix/synapse/homeserver.yaml.new
+        
+        mv /opt/services/matrix/synapse/homeserver.yaml.new /opt/services/matrix/synapse/homeserver.yaml
+        rm -f /tmp/db_config.yml /tmp/homeserver_no_db.yaml
       when: postgres_password is defined
 
     - name: Enable registration in Matrix (optional)
