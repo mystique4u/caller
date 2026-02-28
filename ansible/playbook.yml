@@ -164,6 +164,8 @@
         - /opt/services/wireguard-ui
         - /opt/services/traefik/dynamic
         - /opt/services/traefik/acme
+        - /opt/services/jitsi/prosody/config
+        - /opt/services/jitsi/prosody/prosody-plugins-custom
 
     - name: Create Traefik static configuration with HTTPS
       copy:
@@ -274,13 +276,15 @@
               container_name: jitsi-web
               restart: unless-stopped
               environment:
-                - ENABLE_AUTH=0
+                - ENABLE_AUTH=1
                 - ENABLE_GUESTS=1
+                - AUTH_TYPE=internal
                 - PUBLIC_URL=https://meet.{{ domain_name }}
                 - XMPP_DOMAIN=meet.jitsi
                 - XMPP_AUTH_DOMAIN=auth.meet.jitsi
                 - XMPP_BOSH_URL_BASE=http://jitsi-prosody:5280
                 - XMPP_MUC_DOMAIN=muc.meet.jitsi
+                - XMPP_GUEST_DOMAIN=guest.meet.jitsi
                 - JVB_TCP_HARVESTER_DISABLED=true
               networks:
                 - services
@@ -301,12 +305,17 @@
                 - XMPP_AUTH_DOMAIN=auth.meet.jitsi
                 - XMPP_MUC_DOMAIN=muc.meet.jitsi
                 - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+                - XMPP_GUEST_DOMAIN=guest.meet.jitsi
                 - JICOFO_COMPONENT_SECRET=jicofo_secret
                 - JICOFO_AUTH_PASSWORD=focus_password
                 - JVB_AUTH_USER=jvb
                 - JVB_AUTH_PASSWORD=jvb_password
-                - ENABLE_AUTH=0
+                - ENABLE_AUTH=1
                 - ENABLE_GUESTS=1
+                - AUTH_TYPE=internal
+              volumes:
+                - /opt/services/jitsi/prosody/config:/config
+                - /opt/services/jitsi/prosody/prosody-plugins-custom:/prosody-plugins-custom
               networks:
                 - services
 
@@ -399,6 +408,32 @@
         delay: 5
       loop:
         - 80
+      ignore_errors: yes
+
+    - name: Wait for Jitsi Prosody to be ready
+      wait_for:
+        timeout: 30
+      delegate_to: localhost
+
+    - name: Create default Jitsi admin user
+      shell: |
+        docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register admin auth.meet.jitsi {{ lookup('env', 'JITSI_ADMIN_PASSWORD') | default('ChangeMe123!', true) }}
+      register: create_user_result
+      failed_when: false
+      changed_when: "'already registered' not in create_user_result.stderr"
+
+    - name: Display admin credentials
+      debug:
+        msg:
+          - "=========================================="
+          - "Jitsi Meet Admin Credentials"
+          - "=========================================="
+          - "URL: https://meet.{{ domain_name }}"
+          - "Username: admin@auth.meet.jitsi"
+          - "Password: {{ lookup('env', 'JITSI_ADMIN_PASSWORD') | default('ChangeMe123!', true) }}"
+          - "=========================================="
+          - "⚠️  Change the password after first login!"
+          - "=========================================="
       ignore_errors: yes
 
     - name: Display WireGuard status
