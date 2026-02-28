@@ -499,14 +499,192 @@ docker restart matrix-synapse
 ✅ **File Sharing** - Send documents, images, videos  
 ✅ **End-to-End Encryption** - All messages encrypted by default  
 
-### Connecting Mobile Apps
+### 📱 Getting Started with Matrix
 
-You can use Element mobile apps:
-- **iOS:** [Element on App Store](https://apps.apple.com/app/vector/id1083446067)
-- **Android:** [Element on Play Store](https://play.google.com/store/apps/details?id=im.vector.app)
+#### Option 1: Web Browser (Ubuntu, Mac, Windows)
 
-**Homeserver URL:** `https://matrix.YOUR_DOMAIN`
+1. **Open your browser** (Firefox, Chrome, Safari, etc.)
+2. **Navigate to:** `https://chat.itin.buzz` (replace with your domain)
+3. **First time setup:**
+   - Click **"Sign In"**
+   - Enter your username: `@admin:itin.buzz` (or your username)
+   - Enter your password
+   - Click **"Sign in"**
+4. **Start using:**
+   - Create rooms (group chats)
+   - Send direct messages
+   - Make voice/video calls
+   - Share files and images
 
+#### Option 2: Element Desktop App (Ubuntu/Linux)
+
+**Install via Snap:**
+```bash
+sudo snap install element-desktop
+```
+
+**Or download .deb package:**
+```bash
+# Download latest release
+wget https://packages.riot.im/debian/pool/main/e/element-desktop/element-desktop_1.11.58_amd64.deb
+
+# Install
+sudo dpkg -i element-desktop_*.deb
+sudo apt-get install -f  # Fix dependencies if needed
+```
+
+**Launch and configure:**
+1. Open Element Desktop
+2. Click **"Edit"** next to "Sign in to matrix.org"
+3. Enter homeserver: `https://matrix.itin.buzz` (your domain)
+4. Click **"Continue"**
+5. Enter username: `@admin:itin.buzz`
+6. Enter password
+7. Click **"Sign in"**
+
+#### Option 3: Element Mobile (iOS)
+
+**Install from App Store:**
+1. Open **App Store** on your iPhone/iPad
+2. Search for **"Element - Secure Messenger"**
+3. Install the app (by Element)
+4. Open Element
+
+**Configure custom homeserver:**
+1. On the welcome screen, tap **"Sign in"**
+2. Tap **"Edit"** next to "matrix.org"
+3. Enter homeserver: `https://matrix.itin.buzz` (your domain)
+4. Tap **"Continue"**
+5. Enter credentials:
+   - **Username:** `@admin:itin.buzz`
+   - **Password:** (your password)
+6. Tap **"Sign in"**
+
+**Quick Link:** [Element iOS App Store](https://apps.apple.com/app/vector/id1083446067)
+
+**iOS Features:**
+- ✅ End-to-end encrypted messaging
+- ✅ Push notifications
+- ✅ Voice and video calls
+- ✅ File sharing and camera integration
+- ✅ Background sync
+- ✅ Face ID / Touch ID support
+
+#### Option 4: Element Mobile (Android)
+
+**Install from Google Play:**
+1. Open **Google Play Store** on your Android device
+2. Search for **"Element - Secure Messenger"**
+3. Install the app (by Element)
+4. Open Element
+
+**Configure custom homeserver:**
+1. On the welcome screen, tap **"Sign in"**
+2. Tap **"Edit"** next to "matrix.org"
+3. Enter homeserver: `https://matrix.itin.buzz` (your domain)
+4. Tap **"Continue"**
+5. Enter credentials:
+   - **Username:** `@admin:itin.buzz`
+   - **Password:** (your password)
+6. Tap **"Sign in"**
+
+**Alternative: Install via F-Droid (Open Source):**
+```bash
+# Install F-Droid first, then search for "Element" in F-Droid
+# Or download APK from: https://github.com/vector-im/element-android/releases
+```
+
+**Quick Link:** [Element Android Play Store](https://play.google.com/store/apps/details?id=im.vector.app)
+
+**Android Features:**
+- ✅ End-to-end encrypted messaging
+- ✅ Push notifications (FCM)
+- ✅ Voice and video calls
+- ✅ File sharing and camera integration
+- ✅ Background sync
+- ✅ Fingerprint / PIN lock
+
+### 🎯 Quick Start Guide
+
+**1. First Login:**
+   - Web: `https://chat.itin.buzz`
+   - Homeserver: `https://matrix.itin.buzz`
+   - Username: `@admin:itin.buzz` (or your username)
+
+**2. Create Your First Room:**
+   - Click **"+"** → **"Create room"**
+   - Name it (e.g., "Team Chat")
+   - Choose encryption: **Enabled** (recommended)
+   - Click **"Create room"**
+
+**3. Invite Users:**
+   - Inside the room, click **"Invite"**
+   - Enter username: `@username:itin.buzz`
+   - Click **"Invite"**
+
+**4. Make a Video Call:**
+   - Inside any room or direct message
+   - Click the **video camera icon**
+   - For group video calls (3+ people):
+     - Uses your Jitsi server automatically
+     - Opens in new tab/window
+     - Share the meeting link with participants
+
+**5. Enable Notifications (Mobile):**
+   - Open Element Settings → Notifications
+   - Grant notification permissions
+   - Configure notification preferences
+
+### 🔐 Security & Encryption
+
+**Verify Devices:**
+1. When you see "Unverified session" warnings
+2. Click **"Verify"**
+3. Compare emoji/numbers between devices
+4. Click **"They match"**
+
+**Backup Keys:**
+1. Go to Settings → Security & Privacy
+2. Click **"Backup encryption keys"**
+3. Save your security key somewhere safe
+4. This allows message recovery on new devices
+
+**Cross-Signing:**
+- Automatically set up on first login
+- Verifies your devices trust each other
+- Enables seamless encryption across devices
+
+### 🛠️ Troubleshooting
+
+**Cannot connect to homeserver:**
+```bash
+# Check if Matrix is running
+ssh root@YOUR_SERVER_IP
+docker ps | grep matrix
+
+# Check Matrix logs
+docker logs matrix-synapse --tail 50
+
+# Verify DNS
+dig matrix.itin.buzz
+```
+
+**Forgot password:**
+```bash
+# Reset password via command line
+ssh root@YOUR_SERVER_IP
+docker exec matrix-synapse register_new_matrix_user -u USERNAME -p NEW_PASSWORD -c /data/homeserver.yaml http://localhost:8008
+```
+
+**Push notifications not working (Mobile):**
+- Check app permissions in device settings
+- Ensure app is not battery-optimized (Android)
+- Verify notification settings in Element app
+
+**Video calls not working:**
+- Check microphone/camera permissions
+- Verify Jitsi Meet is accessible: `https://meet.itin.buzz`
+- Try refreshing the page/app
 
 ### Security Best Practices
 
@@ -514,6 +692,79 @@ You can use Element mobile apps:
 - ✅ Store credentials **only in GitHub Secrets**, never in code or documentation
 - ✅ Create separate user accounts for each team member
 - ✅ Rotate passwords periodically
+- ✅ Enable **device verification** for all sessions
+- ✅ **Backup encryption keys** to avoid losing message history
+- ✅ Use **encrypted rooms** for sensitive conversations
+
+### 🧪 Testing Your Matrix Setup
+
+**1. Verify Matrix is running:**
+```bash
+ssh root@YOUR_SERVER_IP
+docker ps | grep matrix
+# Should show: matrix-postgres, matrix-synapse, element-web (all running)
+```
+
+**2. Test Matrix API:**
+```bash
+curl https://matrix.itin.buzz/_matrix/client/versions
+# Should return: {"versions":["r0.0.1","r0.1.0",...]}
+```
+
+**3. Test Element Web:**
+```bash
+curl -I https://chat.itin.buzz
+# Should return: HTTP/2 200
+```
+
+**4. Create a test user (Ubuntu):**
+```bash
+ssh root@YOUR_SERVER_IP
+docker exec matrix-synapse register_new_matrix_user \
+  -u testuser \
+  -p TestPassword123 \
+  -c /data/homeserver.yaml \
+  http://localhost:8008
+```
+
+**5. Login and test messaging:**
+- Open `https://chat.itin.buzz` in browser
+- Login with: `@testuser:itin.buzz` / `TestPassword123`
+- Send a message to your admin account
+- Test encryption, file upload, and video call
+
+**6. Test mobile apps:**
+- Install Element on iOS/Android
+- Configure homeserver: `https://matrix.itin.buzz`
+- Login with test user
+- Verify push notifications work
+- Test voice/video calls
+
+### 📊 Monitoring Matrix
+
+**Check Synapse logs:**
+```bash
+docker logs matrix-synapse --tail 100 -f
+```
+
+**Check database:**
+```bash
+docker exec matrix-postgres psql -U synapse -d synapse -c "SELECT count(*) FROM users;"
+```
+
+**Check disk usage:**
+```bash
+du -sh /opt/services/matrix/*
+```
+
+**Backup Matrix data:**
+```bash
+# Backup database
+docker exec matrix-postgres pg_dump -U synapse synapse > matrix_backup.sql
+
+# Backup Synapse data
+tar -czf matrix_data_backup.tar.gz /opt/services/matrix/synapse/
+```
 
 ## 📚 Additional Resources
 
