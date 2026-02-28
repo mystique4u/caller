@@ -9,15 +9,6 @@ on:
       - 'ansible/**'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/destroy.yml'
-    paths-ignore:
-      - '**.md'
-      - 'README.md'
-      - 'DEPLOYMENT.md'
-      - 'MATRIX_GUIDE.md'
-      - 'WIREGUARD_GUIDE.md'
-      - 'JITSI_GUIDE.md'
-      - 'LICENSE'
-      - '.gitignore'
   workflow_dispatch:
     inputs:
       action:
