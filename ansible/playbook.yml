@@ -413,6 +413,14 @@
         timeout: 30
       delegate_to: localhost
 
+    - name: Fix Jitsi authdomain in config.js
+      shell: |
+        docker exec jitsi-web sed -i "s/config.hosts.authdomain = 'meet.jitsi';/config.hosts.authdomain = 'auth.meet.jitsi';/g" /config/config.js
+        docker exec jitsi-web nginx -s reload
+      register: fix_config_result
+      failed_when: false
+      changed_when: true
+
     - name: Create Jitsi admin user
       shell: |
         docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register {{ jitsi_admin_user }} auth.meet.jitsi {{ jitsi_admin_password }}
