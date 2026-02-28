@@ -642,10 +642,10 @@ jobs:
             docker inspect jitsi-web --format='{{range $key, $value := .Config.Labels}}{{$key}}={{$value}}{{"\n"}}{{end}}' | grep traefik || echo "No Traefik labels found!"
             
             echo ""
-            echo "=== Traefik Container Logs (last 30 lines) ==="
-            docker logs traefik --tail=30
-          EOF
-          
+            echo "=== Matrix Synapse Labels ==="
+            docker inspect matrix-synapse --format='{{range $key, $value := .Config.Labels}}{{$key}}={{$value}}{{"\n"}}{{end}}' | grep traefik 2>/dev/null || echo "Matrix not deployed (requires secrets)"
+            
+            echo ""
       - name: Check DNS resolution
         run: |
           domain="${{ secrets.DOMAIN_NAME }}"
@@ -654,6 +654,20 @@ jobs:
           echo "=== Root Domain ==="
           dig +short "$domain" || echo "⚠️ DNS not resolved yet"
           
+          echo "=== VPN Subdomain ==="
+          dig +short "vpn.$domain" || echo "⚠️ DNS not resolved yet"
+          
+          echo "=== Meet Subdomain ==="
+          dig +short "meet.$domain" || echo "⚠️ DNS not resolved yet"
+          
+          echo "=== Matrix Subdomain ==="
+          dig +short "matrix.$domain" || echo "⚠️ DNS not resolved yet"
+          
+          echo "=== Chat Subdomain (Element) ==="
+          dig +short "chat.$domain" || echo "⚠️ DNS not resolved yet"
+          
+          echo ""
+          echo "Expected IP: ${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           echo "=== VPN Subdomain ==="
           dig +short "vpn.$domain" || echo "⚠️ DNS not resolved yet"
           
@@ -694,6 +708,22 @@ jobs:
             echo "::warning::Jitsi Meet at https://meet.$domain is not responding yet"
           fi
           
+          # Check Matrix Synapse homeserver
+          echo "Testing https://matrix.$domain ..."
+          if curl -sSf -k --connect-timeout 10 "https://matrix.$domain/_matrix/client/versions" > /dev/null 2>&1; then
+            echo "✅ Matrix Synapse is accessible at https://matrix.$domain"
+          else
+            echo "::warning::Matrix Synapse at https://matrix.$domain is not responding yet (may not be deployed if secrets not configured)"
+          fi
+          
+          # Check Element Web client
+          echo "Testing https://chat.$domain ..."
+          if curl -sSf -k --connect-timeout 10 "https://chat.$domain" > /dev/null 2>&1; then
+            echo "✅ Element Web is accessible at https://chat.$domain"
+          else
+            echo "::warning::Element Web at https://chat.$domain is not responding yet (may not be deployed if secrets not configured)"
+          fi
+          
           # Check Traefik dashboard
           echo "Testing Traefik dashboard..."
           if curl -sSf --connect-timeout 10 "http://$ip:8080/api/overview" > /dev/null 2>&1; then
@@ -729,25 +759,37 @@ jobs:
           echo "- **Root Domain:** https://$domain" >> $GITHUB_STEP_SUMMARY
           echo "- **WireGuard UI:** https://vpn.$domain" >> $GITHUB_STEP_SUMMARY
           echo "- **Jitsi Meet:** https://meet.$domain" >> $GITHUB_STEP_SUMMARY
+          echo "- **Matrix Synapse:** https://matrix.$domain" >> $GITHUB_STEP_SUMMARY
+          echo "- **Element Web:** https://chat.$domain" >> $GITHUB_STEP_SUMMARY
           echo "- **Traefik Dashboard:** http://$ip:8080/dashboard/" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### ⚠️ Important Notes" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- SSL certificates may take 5-10 minutes to provision" >> $GITHUB_STEP_SUMMARY
           echo "- Ensure DNS nameservers are updated at your registrar" >> $GITHUB_STEP_SUMMARY
-          echo "- WireGuard VPN port: 51820/UDP" >> $GITHUB_STEP_SUMMARY
-          
       - name: Display connection information
         run: |
           echo "🎉 WireGuard VPN Server deployed successfully!"
           echo "📍 Server IP: ${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           echo "🌐 Domain: ${{ secrets.DOMAIN_NAME }}"
-          echo "🔒 WireGuard UI: https://vpn.${{ secrets.DOMAIN_NAME }}"
-          echo "📹 Jitsi Meet: https://meet.${{ secrets.DOMAIN_NAME }}"
-          echo "📊 Traefik Dashboard: https://${{ secrets.DOMAIN_NAME }}:8080/dashboard/"
+          echo ""
+          echo "🔐 Service URLs:"
+          echo "  🔒 WireGuard UI: https://vpn.${{ secrets.DOMAIN_NAME }}"
+          echo "  📹 Jitsi Meet: https://meet.${{ secrets.DOMAIN_NAME }}"
+          echo "  💬 Matrix Synapse: https://matrix.${{ secrets.DOMAIN_NAME }}"
+          echo "  🗨️  Element Web: https://chat.${{ secrets.DOMAIN_NAME }}"
+          echo "  📊 Traefik Dashboard: https://${{ secrets.DOMAIN_NAME }}:8080/dashboard/"
           echo ""
           echo "⚠️  DNS Configuration Required:"
           echo "   Update nameservers at your domain registrar to:"
           echo "   - hydrogen.ns.hetzner.com"
+          echo "   - oxygen.ns.hetzner.com"
+          echo "   - helium.ns.hetzner.de"
+          echo ""
+          echo "📝 Note: Matrix services require GitHub Secrets to be configured:"
+          echo "   - MATRIX_ADMIN_USER"
+          echo "   - MATRIX_ADMIN_PASSWORD"
+          echo "   - MATRIX_REGISTRATION_SECRET"
+          echo "   - MATRIX_POSTGRES_PASSWORD"om"
           echo "   - oxygen.ns.hetzner.com"
           echo "   - helium.ns.hetzner.de"
