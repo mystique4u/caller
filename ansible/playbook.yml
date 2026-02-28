@@ -17,6 +17,13 @@
     jitsi_prosody_image: "jitsi/prosody:stable"
     jitsi_jicofo_image: "jitsi/jicofo:stable"
     jitsi_jvb_image: "jitsi/jvb:stable"
+    matrix_synapse_image: "matrixdotorg/synapse:latest"
+    matrix_postgres_image: "postgres:15-alpine"
+    element_web_image: "vectorim/element-web:latest"
+    matrix_admin_user: "{{ lookup('env', 'MATRIX_ADMIN_USER') | default('admin', true) }}"
+    matrix_admin_password: "{{ lookup('env', 'MATRIX_ADMIN_PASSWORD') }}"
+    matrix_registration_secret: "{{ lookup('env', 'MATRIX_REGISTRATION_SECRET') }}"
+    postgres_password: "{{ lookup('env', 'MATRIX_POSTGRES_PASSWORD') }}"
 
   tasks:
     - name: Wait for server to be ready
@@ -166,6 +173,9 @@
         - /opt/services/traefik/acme
         - /opt/services/jitsi/prosody/config
         - /opt/services/jitsi/prosody/prosody-plugins-custom
+        - /opt/services/matrix/synapse
+        - /opt/services/matrix/postgres
+        - /opt/services/matrix/element
 
     - name: Create Traefik static configuration with HTTPS
       copy:
@@ -350,6 +360,63 @@
               networks:
                 - services
 
+            matrix-postgres:
+              image: "{{ matrix_postgres_image }}"
+              container_name: matrix-postgres
+              restart: unless-stopped
+              environment:
+                - POSTGRES_DB=synapse
+                - POSTGRES_USER=synapse
+                - POSTGRES_PASSWORD={{ postgres_password }}
+                - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+              volumes:
+                - /opt/services/matrix/postgres:/var/lib/postgresql/data
+              networks:
+                - services
+
+            matrix-synapse:
+              image: "{{ matrix_synapse_image }}"
+              container_name: matrix-synapse
+              restart: unless-stopped
+              environment:
+                - SYNAPSE_SERVER_NAME={{ domain_name }}
+                - SYNAPSE_REPORT_STATS=no
+                - SYNAPSE_ENABLE_REGISTRATION=no
+                - SYNAPSE_REGISTRATION_SHARED_SECRET={{ matrix_registration_secret }}
+                - POSTGRES_HOST=matrix-postgres
+                - POSTGRES_USER=synapse
+                - POSTGRES_PASSWORD={{ postgres_password }}
+                - POSTGRES_DB=synapse
+              volumes:
+                - /opt/services/matrix/synapse:/data
+              networks:
+                - services
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.matrix.rule=Host(`matrix.{{ domain_name }}`)"
+                - "traefik.http.routers.matrix.entrypoints=websecure"
+                - "traefik.http.services.matrix.loadbalancer.server.port=8008"
+                - "traefik.http.services.matrix.loadbalancer.server.scheme=http"
+                - "traefik.http.routers.matrix.tls.certresolver=letsencrypt"
+              depends_on:
+                - matrix-postgres
+
+            element-web:
+              image: "{{ element_web_image }}"
+              container_name: element-web
+              restart: unless-stopped
+              volumes:
+                - /opt/services/matrix/element/config.json:/app/config.json:ro
+              networks:
+                - services
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.element.rule=Host(`chat.{{ domain_name }}`)"
+                - "traefik.http.routers.element.entrypoints=websecure"
+                - "traefik.http.services.element.loadbalancer.server.port=80"
+                - "traefik.http.services.element.loadbalancer.server.scheme=http"
+                - "traefik.http.routers.element.tls.certresolver=letsencrypt"
+
           networks:
             services:
               name: services_network
@@ -372,6 +439,107 @@
     - name: Display certificate status
       debug:
         msg: "{{ 'Using existing Let''s Encrypt certificates' if (acme_file.stat.exists and acme_file.stat.size > 0) else 'Will request new Let''s Encrypt certificates (first deployment)' }}"
+
+    - name: Ensure acme.json has correct permissions
+      file:
+        path: /opt/services/traefik/acme/acme.json
+        mode: '0600'
+      when: acme_file.stat.exists
+
+    - name: Generate Matrix Synapse configuration
+      shell: |
+        docker run --rm \
+          -v /opt/services/matrix/synapse:/data \
+          -e SYNAPSE_SERVER_NAME={{ domain_name }} \
+          -e SYNAPSE_REPORT_STATS=no \
+          {{ matrix_synapse_image }} generate
+      args:
+        creates: /opt/services/matrix/synapse/homeserver.yaml
+
+    - name: Configure Matrix Synapse database
+      lineinfile:
+        path: /opt/services/matrix/synapse/homeserver.yaml
+        regexp: '^  name: sqlite3'
+        line: '  name: psycopg2'
+        backup: yes
+      when: postgres_password is defined
+
+    - name: Add PostgreSQL connection to Matrix config
+      blockinfile:
+        path: /opt/services/matrix/synapse/homeserver.yaml
+        marker: "# {mark} ANSIBLE MANAGED POSTGRES CONFIG"
+        insertafter: '^database:'
+        block: |
+          args:
+            user: synapse
+            password: {{ postgres_password }}
+            database: synapse
+            host: matrix-postgres
+            port: 5432
+            cp_min: 5
+            cp_max: 10
+      when: postgres_password is defined
+
+    - name: Enable registration in Matrix (optional)
+      lineinfile:
+        path: /opt/services/matrix/synapse/homeserver.yaml
+        regexp: '^enable_registration:'
+        line: 'enable_registration: false'
+        backup: yes
+
+    - name: Set registration shared secret
+      lineinfile:
+        path: /opt/services/matrix/synapse/homeserver.yaml
+        regexp: '^registration_shared_secret:'
+        line: 'registration_shared_secret: "{{ matrix_registration_secret }}"'
+        backup: yes
+      when: matrix_registration_secret is defined
+
+    - name: Create Element Web configuration
+      copy:
+        content: |
+          {
+            "default_server_config": {
+              "m.homeserver": {
+                "base_url": "https://matrix.{{ domain_name }}",
+                "server_name": "{{ domain_name }}"
+              }
+            },
+            "brand": "Element",
+            "integrations_ui_url": "https://scalar.vector.im/",
+            "integrations_rest_url": "https://scalar.vector.im/api",
+            "integrations_widgets_urls": [
+              "https://scalar.vector.im/_matrix/integrations/v1",
+              "https://scalar.vector.im/api",
+              "https://scalar-staging.vector.im/_matrix/integrations/v1",
+              "https://scalar-staging.vector.im/api",
+              "https://scalar-staging.riot.im/scalar/api"
+            ],
+            "bug_report_endpoint_url": "https://element.io/bugreports/submit",
+            "defaultCountryCode": "GB",
+            "showLabsSettings": true,
+            "features": {
+              "feature_pinning": "labs",
+              "feature_custom_status": "labs",
+              "feature_custom_tags": "labs",
+              "feature_state_counters": "labs",
+              "feature_voice_messages": "labs",
+              "feature_thread": "labs"
+            },
+            "default_federate": true,
+            "default_theme": "dark",
+            "roomDirectory": {
+              "servers": ["{{ domain_name }}"]
+            },
+            "enable_presence_by_hs_url": {
+              "https://matrix.{{ domain_name }}": true
+            },
+            "settingDefaults": {
+              "breadcrumbs": true
+            }
+          }
+        dest: /opt/services/matrix/element/config.json
+        mode: '0644'
 
     - name: Ensure acme.json has correct permissions
       file:
@@ -429,18 +597,36 @@
       changed_when: "'already registered' not in create_user_result.stderr"
       when: jitsi_admin_user is defined and jitsi_admin_password is defined
 
+    - name: Wait for Matrix Synapse to be ready
+      wait_for:
+        timeout: 30
+      delegate_to: localhost
+      when: matrix_admin_user is defined and matrix_admin_password is defined
+
+    - name: Create Matrix admin user
+      shell: |
+        docker exec matrix-synapse register_new_matrix_user -u {{ matrix_admin_user }} -p {{ matrix_admin_password }} -a -c /data/homeserver.yaml http://localhost:8008
+      register: matrix_user_result
+      failed_when: false
+      changed_when: "'User ID already taken' not in matrix_user_result.stderr and matrix_user_result.rc == 0"
+      when: matrix_admin_user is defined and matrix_admin_password is defined
+
     - name: Display admin credentials
       debug:
         msg:
           - "=========================================="
-          - "Jitsi Meet Admin Access"
+          - "Services Admin Access"
           - "=========================================="
-          - "URL: https://meet.{{ domain_name }}"
-          - "Username: {{ jitsi_admin_user }}@auth.meet.jitsi"
+          - "Jitsi Meet: https://meet.{{ domain_name }}"
+          - "  Username: {{ jitsi_admin_user }}@auth.meet.jitsi"
+          - "  Password: (stored in GitHub Secrets)"
+          - ""
+          - "Matrix/Element: https://chat.{{ domain_name }}"
+          - "  Username: @{{ matrix_admin_user }}:{{ domain_name }}"
+          - "  Password: (stored in GitHub Secrets)"
+          - "  Homeserver: https://matrix.{{ domain_name }}"
           - "=========================================="
-          - "⚠️  Password is stored in GitHub Secrets"
-          - "=========================================="
-      when: jitsi_admin_user is defined
+      when: jitsi_admin_user is defined or matrix_admin_user is defined
       ignore_errors: yes
 
     - name: Display WireGuard status

@@ -169,6 +169,24 @@ resource "hcloud_zone_record" "galene" {
   value = hcloud_server.vm.ipv4_address
 }
 
+# DNS A Record for Matrix homeserver
+resource "hcloud_zone_record" "matrix" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "matrix"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
+}
+
+# DNS A Record for Element web client
+resource "hcloud_zone_record" "element" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "chat"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
+}
+
 # Outputs
 output "public_ip" {
   description = "The public IPv4 address of the VM"
