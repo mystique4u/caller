@@ -348,25 +348,12 @@ jobs:
           echo "🔧 Initializing Terraform..."
           terraform init
         
-      - name: Download Plan (if available)
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-plan
-          path: terraform/
-        continue-on-error: true
-        id: download_plan
-        
       - name: Terraform Apply
         id: apply
         run: |
           echo "🚀 Applying Terraform changes (auto-approved on push)..."
-          if [ -f "tfplan" ]; then
-            echo "✅ Using pre-generated plan from this workflow run"
-            terraform apply -auto-approve tfplan
-          else
-            echo "ℹ️ No plan artifact found, generating new plan and applying"
-            terraform apply -auto-approve -input=false
-          fi
+          echo "ℹ️ Auto-deploy on push - not using plan artifact"
+          terraform apply -auto-approve -input=false
           echo "✅ Infrastructure deployed successfully"
           
       - name: Get Terraform Outputs
@@ -606,11 +593,12 @@ jobs:
             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             echo ""
             
-            echo "=== Checking if all services are running ==="
-            required_containers="traefik wireguard-ui jitsi-web jitsi-prosody jitsi-jicofo jitsi-jvb matrix-postgres matrix-synapse element-web"
+            echo "=== Checking if core services are running ==="
+            # Core services that should always be running
+            core_containers="traefik wireguard-ui jitsi-web jitsi-prosody jitsi-jicofo jitsi-jvb"
             all_running=true
             
-            for container in $required_containers; do
+            for container in $core_containers; do
               if docker ps --filter "name=$container" --filter "status=running" | grep -q "$container"; then
                 echo "✅ $container is running"
               else
@@ -620,13 +608,29 @@ jobs:
             done
             
             echo ""
+            echo "=== Checking optional Matrix services ==="
+            optional_containers="matrix-postgres matrix-synapse element-web"
+            
+            for container in $optional_containers; do
+              if docker ps --filter "name=$container" --filter "status=running" | grep -q "$container"; then
+                echo "✅ $container is running"
+              else
+                echo "ℹ️  $container is not running (optional - requires GitHub Secrets configuration)"
+              fi
+            done
+            
+            echo ""
             echo "=== Docker Compose Logs (last 20 lines) ==="
             cd /opt/services
             docker compose logs --tail=20
             
             if [ "$all_running" = false ]; then
+              echo "ERROR: One or more core services are not running!"
               exit 1
             fi
+            
+            echo ""
+            echo "✅ All core services are healthy!"
           EOF
           
       - name: Check Traefik routing and labels
