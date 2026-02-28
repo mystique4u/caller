@@ -614,7 +614,7 @@
 
     - name: Create Matrix admin user
       shell: |
-        docker exec matrix-synapse register_new_matrix_user -u {{ matrix_admin_user }} -p {{ matrix_admin_password }} -a -c /data/homeserver.yaml http://localhost:8008
+        docker exec matrix-synapse register_new_matrix_user -u {{ matrix_admin_user }} -p {{ matrix_admin_password }} --admin -c /data/homeserver.yaml http://localhost:8008
       register: matrix_user_result
       failed_when: false
       changed_when: "'User ID already taken' not in matrix_user_result.stderr and matrix_user_result.rc == 0"
