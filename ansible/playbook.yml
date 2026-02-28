@@ -277,14 +277,13 @@
               restart: unless-stopped
               environment:
                 - ENABLE_AUTH=1
-                - ENABLE_GUESTS=1
+                - ENABLE_GUESTS=0
                 - AUTH_TYPE=internal
                 - PUBLIC_URL=https://meet.{{ domain_name }}
                 - XMPP_DOMAIN=meet.jitsi
                 - XMPP_AUTH_DOMAIN=auth.meet.jitsi
                 - XMPP_BOSH_URL_BASE=http://jitsi-prosody:5280
                 - XMPP_MUC_DOMAIN=muc.meet.jitsi
-                - XMPP_GUEST_DOMAIN=guest.meet.jitsi
                 - JVB_TCP_HARVESTER_DISABLED=true
               networks:
                 - services
@@ -305,13 +304,12 @@
                 - XMPP_AUTH_DOMAIN=auth.meet.jitsi
                 - XMPP_MUC_DOMAIN=muc.meet.jitsi
                 - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
-                - XMPP_GUEST_DOMAIN=guest.meet.jitsi
                 - JICOFO_COMPONENT_SECRET=jicofo_secret
                 - JICOFO_AUTH_PASSWORD=focus_password
                 - JVB_AUTH_USER=jvb
                 - JVB_AUTH_PASSWORD=jvb_password
                 - ENABLE_AUTH=1
-                - ENABLE_GUESTS=1
+                - ENABLE_GUESTS=0
                 - AUTH_TYPE=internal
               volumes:
                 - /opt/services/jitsi/prosody/config:/config
