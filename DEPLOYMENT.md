@@ -355,12 +355,76 @@ The workflow will automatically run health checks:
 3. Fix any issues
 4. Run deploy workflow fresh
 
+## 📹 Jitsi Meet Video Conferencing
+
+### Authentication & User Management
+
+Jitsi Meet is deployed with **authentication enabled** by default:
+- Only registered users can **create** meetings
+- Guests can **join** meetings (without login)
+
+### Default Admin Credentials
+
+**URL:** `https://meet.YOUR_DOMAIN`  
+**Username:** `admin@auth.meet.jitsi`  
+**Default Password:** `ChangeMe123!`
+
+⚠️ **Change the password immediately after first deployment!**
+
+### Managing Users
+
+#### Create a new user:
+```bash
+ssh root@YOUR_SERVER_IP
+docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register USERNAME auth.meet.jitsi PASSWORD
+```
+
+Example:
+```bash
+docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register john auth.meet.jitsi SecurePass123
+```
+
+#### Change user password:
+```bash
+docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua passwd USERNAME@auth.meet.jitsi
+```
+
+#### Delete a user:
+```bash
+docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua deluser USERNAME@auth.meet.jitsi
+```
+
+#### List all users:
+```bash
+docker exec jitsi-prosody ls -la /config/data/auth%2emeet%2ejitsi/accounts/
+```
+
+### How to Use Jitsi Meet
+
+1. **Go to:** `https://meet.YOUR_DOMAIN`
+2. **Login** with your credentials (admin or any registered user)
+3. **Enter a room name** (e.g., "TeamMeeting")
+4. **Click "Start meeting"**
+5. **Share the meeting URL** with guests (they can join without login)
+
+### Customize Admin Password
+
+To set a custom admin password during deployment, set the `JITSI_ADMIN_PASSWORD` environment variable:
+
+```bash
+# In your GitHub Secrets, add:
+JITSI_ADMIN_PASSWORD=YourSecurePassword123!
+```
+
+Then redeploy. If not set, the default password `ChangeMe123!` will be used.
+
 ## 📚 Additional Resources
 
 - [Terraform Documentation](https://www.terraform.io/docs)
 - [Hetzner Cloud API](https://docs.hetzner.cloud/)
 - [Ansible Documentation](https://docs.ansible.com/)
 - [WireGuard Documentation](https://www.wireguard.com/quickstart/)
+- [Jitsi Meet Documentation](https://jitsi.github.io/handbook/)
 
 ## 🔗 Quick Links
 
@@ -368,3 +432,4 @@ The workflow will automatically run health checks:
 - **Terraform Cloud:** https://app.terraform.io/
 - **GitHub Actions:** https://github.com/YOUR_USERNAME/caller/actions
 - **Domain DNS:** https://dns.hetzner.com/
+- **Jitsi Meet:** https://meet.YOUR_DOMAIN
