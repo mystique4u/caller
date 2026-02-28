@@ -41,6 +41,7 @@ ssh root@YOUR_SERVER_IP
 docker exec matrix-synapse register_new_matrix_user \
   -u USERNAME \
   -p PASSWORD \
+  --no-admin \
   -c /data/homeserver.yaml \
   http://localhost:8008
 
@@ -48,7 +49,7 @@ docker exec matrix-synapse register_new_matrix_user \
 docker exec matrix-synapse register_new_matrix_user \
   -u USERNAME \
   -p PASSWORD \
-  -a \
+  --admin \
   -c /data/homeserver.yaml \
   http://localhost:8008
 ```
@@ -56,7 +57,8 @@ docker exec matrix-synapse register_new_matrix_user \
 **Parameters:**
 - `-u USERNAME` - The username (without @ or :domain)
 - `-p PASSWORD` - User's password (must be strong!)
-- `-a` - Makes the user an admin (optional, omit for regular users)
+- `--admin` - Makes the user an admin (use for admin users)
+- `--no-admin` - Makes a regular user (use for regular users)
 - `-c /data/homeserver.yaml` - Config file path
 - `http://localhost:8008` - Synapse API endpoint
 
@@ -67,6 +69,7 @@ docker exec matrix-synapse register_new_matrix_user \
 docker exec matrix-synapse register_new_matrix_user \
   -u alice \
   -p SecurePass123! \
+  --no-admin \
   -c /data/homeserver.yaml \
   http://localhost:8008
 # Creates: @alice:itin.buzz
@@ -75,7 +78,7 @@ docker exec matrix-synapse register_new_matrix_user \
 docker exec matrix-synapse register_new_matrix_user \
   -u bob \
   -p AdminPass456! \
-  -a \
+  --admin \
   -c /data/homeserver.yaml \
   http://localhost:8008
 # Creates: @bob:itin.buzz (with admin privileges)
@@ -84,6 +87,7 @@ docker exec matrix-synapse register_new_matrix_user \
 docker exec matrix-synapse register_new_matrix_user \
   -u john.doe \
   -p TeamMember789! \
+  --no-admin \
   -c /data/homeserver.yaml \
   http://localhost:8008
 # Creates: @john.doe:itin.buzz
@@ -177,6 +181,7 @@ for user_pass in "${USERS[@]}"; do
   docker exec matrix-synapse register_new_matrix_user \
     -u "$username" \
     -p "$password" \
+    --no-admin \
     -c /data/homeserver.yaml \
     http://localhost:8008
 done
@@ -908,10 +913,10 @@ Create a support room for your team:
 
 ```bash
 # Create user
-docker exec matrix-synapse register_new_matrix_user -u USER -p PASS -c /data/homeserver.yaml http://localhost:8008
+docker exec matrix-synapse register_new_matrix_user -u USER -p PASS --no-admin -c /data/homeserver.yaml http://localhost:8008
 
 # Create admin
-docker exec matrix-synapse register_new_matrix_user -u USER -p PASS -a -c /data/homeserver.yaml http://localhost:8008
+docker exec matrix-synapse register_new_matrix_user -u USER -p PASS --admin -c /data/homeserver.yaml http://localhost:8008
 
 # List users
 docker exec matrix-postgres psql -U synapse -d synapse -c "SELECT name FROM users;"
