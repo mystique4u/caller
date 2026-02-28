@@ -794,6 +794,4 @@ jobs:
           echo "   - MATRIX_ADMIN_USER"
           echo "   - MATRIX_ADMIN_PASSWORD"
           echo "   - MATRIX_REGISTRATION_SECRET"
-          echo "   - MATRIX_POSTGRES_PASSWORD"om"
-          echo "   - oxygen.ns.hetzner.com"
-          echo "   - helium.ns.hetzner.de"
+          echo "   - MATRIX_POSTGRES_PASSWORD"
