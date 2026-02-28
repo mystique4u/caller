@@ -536,6 +536,10 @@ jobs:
           LETSENCRYPT_ENV: ${{ secrets.LETSENCRYPT_ENV || 'production' }}
           JITSI_ADMIN_USER: ${{ secrets.JITSI_ADMIN_USER }}
           JITSI_ADMIN_PASSWORD: ${{ secrets.JITSI_ADMIN_PASSWORD }}
+          MATRIX_ADMIN_USER: ${{ secrets.MATRIX_ADMIN_USER }}
+          MATRIX_ADMIN_PASSWORD: ${{ secrets.MATRIX_ADMIN_PASSWORD }}
+          MATRIX_REGISTRATION_SECRET: ${{ secrets.MATRIX_REGISTRATION_SECRET }}
+          MATRIX_POSTGRES_PASSWORD: ${{ secrets.MATRIX_POSTGRES_PASSWORD }}
         run: |
           echo "🔐 Let's Encrypt Environment: ${LETSENCRYPT_ENV}"
           if [ "${LETSENCRYPT_ENV}" == "staging" ]; then
@@ -551,6 +555,13 @@ jobs:
             echo "✅ Jitsi admin user will be created: $JITSI_ADMIN_USER"
           else
             echo "⚠️ JITSI_ADMIN_USER or JITSI_ADMIN_PASSWORD not set - skipping admin user creation"
+          fi
+          
+          if [ -n "$MATRIX_ADMIN_USER" ] && [ -n "$MATRIX_ADMIN_PASSWORD" ] && [ -n "$MATRIX_REGISTRATION_SECRET" ] && [ -n "$MATRIX_POSTGRES_PASSWORD" ]; then
+            EXTRA_VARS="$EXTRA_VARS -e matrix_admin_user=$MATRIX_ADMIN_USER -e matrix_admin_password=$MATRIX_ADMIN_PASSWORD -e matrix_registration_secret=$MATRIX_REGISTRATION_SECRET -e postgres_password=$MATRIX_POSTGRES_PASSWORD"
+            echo "✅ Matrix admin user will be created: $MATRIX_ADMIN_USER"
+          else
+            echo "⚠️ Matrix secrets not fully configured - skipping Matrix deployment"
           fi
           
           ansible-playbook -i inventory.ini playbook.yml -v $EXTRA_VARS
@@ -587,7 +598,7 @@ jobs:
             echo ""
             
             echo "=== Checking if all services are running ==="
-            required_containers="traefik wireguard-ui jitsi-web jitsi-prosody jitsi-jicofo jitsi-jvb"
+            required_containers="traefik wireguard-ui jitsi-web jitsi-prosody jitsi-jicofo jitsi-jvb matrix-postgres matrix-synapse element-web"
             all_running=true
             
             for container in $required_containers; do

@@ -28,6 +28,12 @@ Add these secrets:
 - `JITSI_ADMIN_USER` - Admin username (e.g., "admin")
 - `JITSI_ADMIN_PASSWORD` - Secure password for admin user
 
+**Matrix/Element Chat:**
+- `MATRIX_ADMIN_USER` - Matrix admin username (e.g., "admin")
+- `MATRIX_ADMIN_PASSWORD` - Secure password for Matrix admin
+- `MATRIX_REGISTRATION_SECRET` - Random secret for registration (generate with: `openssl rand -hex 32`)
+- `MATRIX_POSTGRES_PASSWORD` - Database password (generate with: `openssl rand -base64 32`)
+
 **Optional:**
 - `LETSENCRYPT_ENV` - Set to `staging` for test certificates (avoids rate limits)
   - Use `staging` for testing deployments
@@ -421,7 +427,86 @@ docker exec jitsi-prosody ls -la /config/data/auth%2emeet%2ejitsi/accounts/
 5. **Share the meeting URL** with other registered users (they must login to join)
 
 ⚠️ **Important:** All participants must have registered accounts. Create accounts for each team member using the commands above.
-5. **Share the meeting URL** with guests (they can join without login)
+
+## 💬 Matrix/Element Secure Messaging
+
+### What is Matrix?
+
+Matrix is a decentralized, secure messaging platform with:
+- 🔒 **End-to-end encryption** by default
+- 📹 **Voice and video calls** (including group calls with Jitsi integration)
+- 💬 **Rich messaging** with file sharing, reactions, threads
+- 🌐 **Federation** - connect to other Matrix servers
+
+### Access Points
+
+**Element Web Client:** `https://chat.YOUR_DOMAIN`  
+**Matrix Homeserver:** `https://matrix.YOUR_DOMAIN`
+
+### Admin Credentials
+
+Admin credentials are configured via **GitHub Secrets**:
+
+**Username:** `@YOUR_ADMIN_USER:YOUR_DOMAIN` (e.g., `@admin:itin.buzz`)  
+**Password:** (as set in GitHub Secrets)
+
+### Managing Users
+
+#### Register a new user (via command line):
+```bash
+ssh root@YOUR_SERVER_IP
+docker exec matrix-synapse register_new_matrix_user -u USERNAME -p PASSWORD -a -c /data/homeserver.yaml http://localhost:8008
+```
+
+- `-u USERNAME` - Username (without @ or :domain)
+- `-p PASSWORD` - User's password
+- `-a` - Make user an admin (optional, remove for regular users)
+
+Example:
+```bash
+docker exec matrix-synapse register_new_matrix_user -u john -p SecurePass123 -c /data/homeserver.yaml http://localhost:8008
+```
+
+This creates user: `@john:YOUR_DOMAIN`
+
+#### Enable open registration (optional):
+
+By default, registration is **disabled** for security. To enable:
+
+```bash
+ssh root@YOUR_SERVER_IP
+docker exec matrix-synapse sed -i 's/enable_registration: false/enable_registration: true/' /data/homeserver.yaml
+docker restart matrix-synapse
+```
+
+⚠️ **Not recommended** - anyone can create accounts!
+
+### How to Use Matrix/Element
+
+1. **Go to:** `https://chat.YOUR_DOMAIN`
+2. **Click "Sign In"**
+3. **Enter credentials:**
+   - Username: `@admin:YOUR_DOMAIN`
+   - Password: (your password)
+4. **Start chatting!**
+
+### Features
+
+✅ **Direct Messages** - 1:1 encrypted chats  
+✅ **Rooms** - Group chats with multiple users  
+✅ **Voice/Video Calls** - Built-in WebRTC calls  
+✅ **Group Video Calls** - Integrated with your Jitsi server  
+✅ **File Sharing** - Send documents, images, videos  
+✅ **End-to-End Encryption** - All messages encrypted by default  
+
+### Connecting Mobile Apps
+
+You can use Element mobile apps:
+- **iOS:** [Element on App Store](https://apps.apple.com/app/vector/id1083446067)
+- **Android:** [Element on Play Store](https://play.google.com/store/apps/details?id=im.vector.app)
+
+**Homeserver URL:** `https://matrix.YOUR_DOMAIN`
+
 
 ### Security Best Practices
 
