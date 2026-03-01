@@ -664,3 +664,137 @@
           - "    - helium.ns.hetzner.de"
           - ""
           - "=============================================="
+
+    # ============================================
+    # BACKUP CONFIGURATION
+    # ============================================
+    - name: Install backup dependencies
+      apt:
+        name:
+          - sshpass
+          - lftp
+        state: present
+        update_cache: yes
+
+    - name: Create backup script directory
+      file:
+        path: /opt/backup
+        state: directory
+        mode: '0700'
+
+    - name: Create backup script
+      copy:
+        content: |
+          #!/bin/bash
+          set -e
+          
+          # Configuration
+          STORAGEBOX_HOST="{{ lookup('env', 'STORAGEBOX_HOST') }}"
+          STORAGEBOX_USER="{{ lookup('env', 'STORAGEBOX_USER') }}"
+          STORAGEBOX_PASSWORD="{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
+          STORAGEBOX_PORT="23"
+          REMOTE_BASE="/home/backups/hosts/caller"
+          BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+          LOCAL_BACKUP_DIR="/tmp/backup-${BACKUP_DATE}"
+          
+          echo "=== Starting backup at $(date) ==="
+          
+          # Create local temporary backup directory
+          mkdir -p "${LOCAL_BACKUP_DIR}"
+          
+          # 1. Backup PostgreSQL database
+          echo "Backing up PostgreSQL database..."
+          docker exec matrix-postgres pg_dump -U synapse synapse | gzip > "${LOCAL_BACKUP_DIR}/matrix-postgres-${BACKUP_DATE}.sql.gz"
+          
+          # 2. Backup Matrix Synapse data
+          echo "Backing up Matrix Synapse data..."
+          tar -czf "${LOCAL_BACKUP_DIR}/matrix-data-${BACKUP_DATE}.tar.gz" -C /opt/services/matrix .
+          
+          # 3. Backup Jitsi configs
+          echo "Backing up Jitsi configs..."
+          tar -czf "${LOCAL_BACKUP_DIR}/jitsi-${BACKUP_DATE}.tar.gz" -C /opt/services/jitsi .
+          
+          # 4. Backup WireGuard configs
+          echo "Backing up WireGuard configs..."
+          tar -czf "${LOCAL_BACKUP_DIR}/wireguard-${BACKUP_DATE}.tar.gz" -C /etc wireguard
+          tar -czf "${LOCAL_BACKUP_DIR}/wireguard-ui-${BACKUP_DATE}.tar.gz" -C /opt/services/wireguard-ui .
+          
+          # 5. Backup Traefik SSL certificates
+          echo "Backing up Traefik SSL certificates..."
+          tar -czf "${LOCAL_BACKUP_DIR}/traefik-${BACKUP_DATE}.tar.gz" -C /opt/services/traefik .
+          
+          # 6. Create manifest file
+          echo "Creating backup manifest..."
+          cat > "${LOCAL_BACKUP_DIR}/MANIFEST.txt" << EOF
+          Backup Date: $(date)
+          Hostname: $(hostname)
+          IP Address: $(hostname -I | awk '{print $1}')
+          
+          Files in this backup:
+          $(ls -lh ${LOCAL_BACKUP_DIR})
+          
+          Total backup size: $(du -sh ${LOCAL_BACKUP_DIR} | awk '{print $1}')
+          EOF
+          
+          # 7. Upload to Storage Box using lftp (supports resuming)
+          echo "Uploading to Storage Box..."
+          lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_COMMANDS
+          set sftp:auto-confirm yes
+          set ssl:verify-certificate no
+          mkdir -p ${REMOTE_BASE}/matrix
+          mkdir -p ${REMOTE_BASE}/postgres
+          mkdir -p ${REMOTE_BASE}/jitsi
+          mkdir -p ${REMOTE_BASE}/wireguard
+          mkdir -p ${REMOTE_BASE}/traefik
+          cd ${REMOTE_BASE}
+          lcd ${LOCAL_BACKUP_DIR}
+          mput *.gz
+          put MANIFEST.txt
+          bye
+          LFTP_COMMANDS
+          
+          # 8. Cleanup old backups on Storage Box (keep last 7 days)
+          echo "Cleaning up old backups..."
+          lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_CLEANUP
+          set sftp:auto-confirm yes
+          set ssl:verify-certificate no
+          cd ${REMOTE_BASE}
+          cls -1 --sort=date | head -n -7 | xargs -r rm
+          bye
+          LFTP_CLEANUP
+          
+          # 9. Cleanup local backup
+          echo "Cleaning up local temporary files..."
+          rm -rf "${LOCAL_BACKUP_DIR}"
+          
+          echo "=== Backup completed successfully at $(date) ==="
+        dest: /opt/backup/backup.sh
+        mode: '0700'
+
+    - name: Create backup cron job (daily at 2 AM)
+      cron:
+        name: "Daily backup to Storage Box"
+        minute: "0"
+        hour: "2"
+        job: "/opt/backup/backup.sh >> /var/log/backup.log 2>&1"
+        user: root
+
+    - name: Create backup log file
+      file:
+        path: /var/log/backup.log
+        state: touch
+        mode: '0644'
+
+    - name: Run initial backup test
+      shell: /opt/backup/backup.sh
+      environment:
+        STORAGEBOX_HOST: "{{ lookup('env', 'STORAGEBOX_HOST') }}"
+        STORAGEBOX_USER: "{{ lookup('env', 'STORAGEBOX_USER') }}"
+        STORAGEBOX_PASSWORD: "{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
+      async: 600
+      poll: 0
+      register: backup_job
+
+    - name: Display backup job info
+      debug:
+        msg: "Initial backup started in background. Check /var/log/backup.log for progress."

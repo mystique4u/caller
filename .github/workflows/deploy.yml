@@ -560,6 +560,11 @@ jobs:
             echo "⚠️ Matrix secrets not fully configured - skipping Matrix deployment"
           fi
           
+          # Add Storage Box credentials for backups
+          export STORAGEBOX_HOST="${{ secrets.STORAGEBOX_HOST }}"
+          export STORAGEBOX_USER="${{ secrets.STORAGEBOX_USER }}"
+          export STORAGEBOX_PASSWORD="${{ secrets.STORAGEBOX_PASSWORD }}"
+          
           ansible-playbook -i inventory.ini playbook.yml -v $EXTRA_VARS
 
   health-check:
