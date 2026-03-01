@@ -160,8 +160,8 @@ resource "hcloud_zone_record" "wireguard" {
   value = hcloud_server.vm.ipv4_address
 }
 
-# DNS A Record for galene subdomain
-resource "hcloud_zone_record" "galene" {
+# DNS A Record for Jitsi Meet subdomain
+resource "hcloud_zone_record" "jitsi" {
   count = var.domain_name != "" ? 1 : 0
   zone  = data.hcloud_zone.domain[0].name
   name  = "meet"

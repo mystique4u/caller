@@ -1,82 +1,70 @@
-# VPN & Services Server
+# Secure Communication Platform
 
-Fully automated deployment of **WireGuard VPN**, **Galène video conferencing**, and **Traefik reverse proxy** on Hetzner Cloud with optional **custom domain and HTTPS support**.
+Fully automated deployment of **WireGuard VPN**, **Jitsi Meet video conferencing**, **Matrix messaging server**, and **Traefik reverse proxy** on Hetzner Cloud with **custom domain and HTTPS/SSL certificates**.
 
 ## 🚀 Features
 
-- ✅ **Fully Automated** - Zero manual configuration
+- ✅ **Fully Automated** - Zero manual configuration via CI/CD
 - ✅ **WireGuard VPN** with Web UI for client management
-- ✅ **Galène** - Lightweight video conferencing
-- ✅ **Traefik** - Modern reverse proxy with automatic HTTPS
+- ✅ **Jitsi Meet** - Secure video conferencing with authentication
+- ✅ **Matrix Synapse** - Private messaging with E2E encryption
+- ✅ **Element Web** - Modern Matrix web client
+- ✅ **Traefik** - Automatic HTTPS with Let's Encrypt
 - ✅ **Docker-based** - All services containerized
 - ✅ **Firewall Automated** - Created and managed by Terraform
 - ✅ **Custom Domain Support** - Automatic DNS and SSL certificates
-- ✅ **IP-based Access** - Works out of the box without domain
+- ✅ **Secrets Management** - All credentials in GitHub Secrets
 
 ## 📋 Access Your Services
 
-### With Custom Domain (HTTPS)
+All services accessible via HTTPS with your custom domain:
 
-| Service               | URL                                      | Credentials                   |
-| --------------------- | ---------------------------------------- | ----------------------------- |
-| **Traefik Dashboard** | `https://yourdomain.com:8080/dashboard/` | No auth                       |
-| **WireGuard UI**      | `https://vpn.yourdomain.com`             | `admin` / `admin`             |
-| **Galène Video**      | `https://meet.yourdomain.com`            | Room: `public`, Pass: `admin` |
-
-### Without Domain (HTTP)
-
-| Service               | URL                              | Credentials                   |
-| --------------------- | -------------------------------- | ----------------------------- |
-| **Traefik Dashboard** | `http://YOUR_IP:8080/dashboard/` | No auth                       |
-| **WireGuard UI**      | `http://YOUR_IP/wireguard`       | `admin` / `admin`             |
-| **Galène Video**      | `http://YOUR_IP/galene`          | Room: `public`, Pass: `admin` |
+| Service               | URL                                      | Credentials                              |
+| --------------------- | ---------------------------------------- | ---------------------------------------- |
+| **Traefik Dashboard** | `https://yourdomain.com:8080/dashboard/` | No auth                                  |
+| **WireGuard UI**      | `https://vpn.yourdomain.com`             | Admin via WireGuard UI                   |
+| **Jitsi Meet**        | `https://meet.yourdomain.com`            | Admin credentials from GitHub Secrets    |
+| **Matrix Synapse**    | `https://matrix.yourdomain.com`          | Homeserver URL for clients               |
+| **Element Web**       | `https://chat.yourdomain.com`            | Matrix credentials from GitHub Secrets   |
 
 ## ⚡ Quick Start
 
-### Without Domain (Basic)
-
 1. **Configure Required GitHub Secrets** (see below)
-2. **Push to main** or trigger "Destroy and Redeploy" workflow
+2. **Push to main** or trigger "Deploy Infrastructure" workflow
 3. **Wait ~10 minutes** for deployment
-4. **Access services** using your server IP (HTTP)
-5. **Change default passwords** immediately!
-
-### With Custom Domain (HTTPS)
-
-1. **Complete basic setup** above
-2. **Follow**: [DOMAIN_QUICKSTART.md](DOMAIN_QUICKSTART.md)
-3. **Add 3 more secrets**: `HETZNER_DNS_TOKEN`, `DOMAIN_NAME`, `EMAIL_ADDRESS`
-4. **Redeploy** and update nameservers at domain registrar
+4. **Update nameservers** at your domain registrar to Hetzner
 5. **Access services** via HTTPS with your domain
 
 ## 🔐 Required GitHub Secrets
 
-Go to: `https://github.com/YOUR_USERNAME/caller/settings/secrets/actions`
+Go to: `Settings` → `Secrets and variables` → `Actions` → `New repository secret`
 
-### Basic Setup (HTTP with IP)
+### Infrastructure Secrets
 
-| Secret Name       | Description                  | Example Value           |
-| ----------------- | ---------------------------- | ----------------------- |
-| `TF_API_TOKEN`    | Terraform Cloud API token    | `***`                   |
-| `HCLOUD_TOKEN`    | Hetzner Cloud API token      | `***`                   |
-| `FIREWALL_NAME`   | Firewall name (auto-created) | `vpn-services-firewall` |
-| `SSH_KEY_IDS`     | SSH key IDs as JSON array    | `[108153935]`           |
-| `SSH_PRIVATE_KEY` | Private SSH key for Ansible  | Full key content        |
+| Secret Name       | Description                  | Required | Example Value           |
+| ----------------- | ---------------------------- | -------- | ----------------------- |
+| `TF_API_TOKEN`    | Terraform Cloud API token    | ✅       | `***`                   |
+| `HCLOUD_TOKEN`    | Hetzner Cloud API token      | ✅       | `***`                   |
+| `FIREWALL_NAME`   | Firewall name (auto-created) | ✅       | `vpn-services-firewall` |
+| `SSH_KEY_IDS`     | SSH key IDs as JSON array    | ✅       | `[108153935]`           |
+| `SSH_PRIVATE_KEY` | Private SSH key for Ansible  | ✅       | Full key content        |
+| `DOMAIN_NAME`     | Your custom domain           | ✅       | `example.com`           |
+| `EMAIL_ADDRESS`   | Email for SSL notifications  | ✅       | `admin@example.com`     |
 
-### Optional: Custom Domain (HTTPS)
+### Service Credentials
 
-| Secret Name     | Description                 | Example Value       |
-| --------------- | --------------------------- | ------------------- |
-| `DOMAIN_NAME`   | Your domain                 | `example.com`       |
-| `EMAIL_ADDRESS` | Email for SSL notifications | `admin@example.com` |
+| Secret Name                  | Description                 | Required | Example Value    |
+| ---------------------------- | --------------------------- | -------- | ---------------- |
+| `JITSI_ADMIN_USER`           | Jitsi admin username        | ✅       | `admin`          |
+| `JITSI_ADMIN_PASSWORD`       | Jitsi admin password        | ✅       | `SecurePass123!` |
+| `MATRIX_ADMIN_USER`          | Matrix admin username       | ✅       | `myadmin`        |
+| `MATRIX_ADMIN_PASSWORD`      | Matrix admin password       | ✅       | `SecurePass456!` |
+| `MATRIX_REGISTRATION_SECRET` | Matrix registration secret  | ✅       | Random string    |
+| `MATRIX_POSTGRES_PASSWORD`   | PostgreSQL database pwd     | ✅       | `DbPass789!`     |
 
-**Note**: DNS is automatically managed by your `HCLOUD_TOKEN` - no separate DNS token needed!
+**Note**: DNS is automatically managed by Hetzner using your `HCLOUD_TOKEN`.
 
-**Detailed setup guides**:
-
-- [GitHub Secrets Guide](docs/GITHUB_SECRETS.md)
-- [Domain Setup Guide](docs/DOMAIN_SETUP.md)
-- [Quick Domain Setup](DOMAIN_QUICKSTART.md)
+**Detailed setup guide**: See [docs/GITHUB_SECRETS.md](docs/GITHUB_SECRETS.md)
 
 ## 🏗️ Infrastructure
 
@@ -92,13 +80,21 @@ Go to: `https://github.com/YOUR_USERNAME/caller/settings/secrets/actions`
 
 - WireGuard & tools
 - Docker & Docker Compose
-- Essential utilities (htop, vim, git, etc.)
+- PostgreSQL client
+- Essential utilities (htop, vim, git, curl, etc.)
 
 ### Docker Services
 
-- **Traefik v2.11** - Reverse proxy & routing
-- **WireGuard UI v0.6.2** - VPN management interface
-- **Galène** - Video conferencing (via Docker)
+- **Traefik v2.11** - Reverse proxy with Let's Encrypt SSL
+- **WireGuard UI v0.6.2** - VPN management interface  
+- **Jitsi Meet** - Video conferencing stack (4 containers)
+  - Web frontend
+  - Prosody XMPP server
+  - Jicofo conference focus
+  - JVB video bridge
+- **Matrix Synapse** - Homeserver with E2E encryption
+- **PostgreSQL 15** - Database for Matrix
+- **Element Web** - Matrix web client
 
 ### Network Configuration
 
@@ -110,8 +106,10 @@ Go to: `https://github.com/YOUR_USERNAME/caller/settings/secrets/actions`
 
 ```
 Port 22    (TCP) - SSH
-Port 80    (TCP) - HTTP via Traefik
+Port 80    (TCP) - HTTP (redirects to HTTPS)
+Port 443   (TCP) - HTTPS (all services)
 Port 8080  (TCP) - Traefik dashboard
+Port 10000 (UDP) - Jitsi video bridge
 Port 51820 (UDP) - WireGuard VPN
 ```
 
@@ -123,39 +121,46 @@ Port 51820 (UDP) - WireGuard VPN
 git push origin main
 ```
 
+**Note**: Deployment is skipped if only documentation files (`.md`) are changed.
+
 ### Manual Redeploy
 
-1. Go to **Actions** → **"Destroy and Redeploy"**
+1. Go to **Actions** → **"Deploy Infrastructure"**
 2. Click **"Run workflow"**
-3. Type `DESTROY` to confirm
-4. Wait for completion
+3. Wait for completion (~10 minutes)
 
-## 📖 Usage Guides
+## 📖 Comprehensive Usage Guides
 
-### WireGuard VPN
+### 🔐 WireGuard VPN Setup
 
-1. Access: `http://YOUR_IP/wireguard`
-2. Login: `admin` / `admin`
-3. **Change password immediately!**
-4. Create clients:
-   - Click "New Client"
-   - Enter name
-   - Download QR code or config file
-5. Import into WireGuard app
+**Full Guide**: [WIREGUARD_GUIDE.md](WIREGUARD_GUIDE.md)
 
-### Galène Video Conferencing
+Quick start:
+1. Access WireGuard UI: `https://vpn.yourdomain.com`
+2. Create client connections via web interface
+3. Download config or scan QR code
+4. Import into WireGuard app (all platforms supported)
 
-1. Access: `http://YOUR_IP/galene`
-2. Join room: `public`
-3. Operator password: `admin`
-4. Share room URL with participants
+### 📹 Jitsi Meet Video Conferencing
 
-### Traefik Dashboard
+**Full Guide**: [JITSI_GUIDE.md](JITSI_GUIDE.md)
 
-1. Access: `http://YOUR_IP:8080/dashboard/`
-2. Monitor service health
-3. View routing rules
-4. Check real-time metrics
+Quick start:
+1. Access Jitsi: `https://meet.yourdomain.com`
+2. Create private meetings (authentication required)
+3. Share meeting link with participants
+4. Features: Screen sharing, recording, virtual backgrounds
+
+### 💬 Matrix Messaging & Element Web
+
+**Full Guide**: [MATRIX_GUIDE.md](MATRIX_GUIDE.md)
+
+Quick start:
+1. Access Element Web: `https://chat.yourdomain.com`
+2. Login with admin credentials (auto-created from GitHub Secrets)
+3. Create encrypted rooms and channels
+4. Add users (admin must create accounts)
+5. Use clients on all platforms (iOS, Android, Windows, macOS, Linux)
 
 ## 🗂️ Server Directory Structure
 
@@ -163,11 +168,19 @@ git push origin main
 /opt/services/
 ├── docker-compose.yml     # All service definitions
 ├── wireguard-ui/          # WireGuard UI database
-├── galene/
-│   ├── groups/            # Room configurations
+├── jitsi/                 # Jitsi Meet configuration
+│   ├── web/               # Web frontend config
+│   ├── prosody/           # XMPP server config
+│   ├── jicofo/            # Conference focus config
+│   └── jvb/               # Video bridge config
+├── matrix/                # Matrix Synapse
+│   ├── homeserver.yaml    # Main configuration
 │   └── data/              # Runtime data
+├── postgres/              # PostgreSQL data
+├── element/               # Element Web config
 └── traefik/
     ├── traefik.toml       # Static config
+    ├── acme.json          # SSL certificates
     └── dynamic/           # Dynamic routing
 
 /etc/wireguard/
@@ -179,14 +192,19 @@ git push origin main
 ### SSH Access
 
 ```bash
-ssh -i ~/.ssh/hetzner-wireguard root@YOUR_IP
+ssh root@yourdomain.com
 ```
 
-### View Logs
+### View Service Logs
 
 ```bash
 cd /opt/services
 docker compose logs -f [service_name]
+
+# Examples:
+docker compose logs -f traefik
+docker compose logs -f matrix-synapse
+docker compose logs -f jitsi-web
 ```
 
 ### Restart Services
@@ -194,12 +212,36 @@ docker compose logs -f [service_name]
 ```bash
 cd /opt/services
 docker compose restart
+
+# Or specific service:
+docker compose restart matrix-synapse
 ```
 
-### Check WireGuard
+### Check All Containers
+
+```bash
+docker ps
+```
+
+### Check WireGuard Status
 
 ```bash
 wg show
+```
+
+### Create Matrix Users (Admin Only)
+
+```bash
+docker exec matrix-synapse register_new_matrix_user \
+  -u USERNAME -p PASSWORD --no-admin \
+  -c /data/homeserver.yaml http://localhost:8008
+```
+
+### Manage Jitsi Users
+
+```bash
+docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua \
+  register USERNAME meet.jitsi PASSWORD
 ```
 
 ### Update Services
@@ -210,21 +252,66 @@ docker compose pull
 docker compose up -d
 ```
 
-## 🔒 Security Notes
+## 🔒 Security Features
 
-- ⚠️ **Change all default passwords immediately!**
-- Services use HTTP (not HTTPS) on IP addresses
-- For production: configure domain + Let's Encrypt
-- Backup `/opt/services/` and `/etc/wireguard/` regularly
-- Firewall automatically restricts access to required ports only
+- ✅ **All credentials stored in GitHub Secrets** - Never in code
+- ✅ **HTTPS/SSL everywhere** - Let's Encrypt automatic certificates
+- ✅ **Jitsi authentication required** - Private video conferencing
+- ✅ **Matrix E2E encryption** - Secure messaging
+- ✅ **Registration disabled** - Admin controls user creation
+- ✅ **Firewall managed by code** - Only required ports open
+- ✅ **Regular security updates** - Easy to update via `docker compose pull`
 
 ## 🐛 Troubleshooting
 
 ### Services Not Accessible
 
 ```bash
-docker ps  # Check running containers
-docker logs traefik  # Check Traefik logs
+# Check all containers
+docker ps
+
+# Check Traefik logs
+docker logs traefik
+
+# Check specific service
+docker logs matrix-synapse
+docker logs jitsi-web
+```
+
+### SSL Certificate Issues
+
+```bash
+# Check Traefik ACME logs
+docker logs traefik | grep acme
+
+# Verify certificate file
+ls -lh /opt/services/traefik/acme.json
+```
+
+### Matrix Connection Issues
+
+```bash
+# Check Matrix Synapse logs
+docker logs matrix-synapse
+
+# Check PostgreSQL connection
+docker exec matrix-postgres psql -U synapse -d synapse -c "SELECT version();"
+
+# Test Matrix API
+curl https://matrix.yourdomain.com/_matrix/client/versions
+```
+
+### Jitsi Video Issues
+
+```bash
+# Check Jitsi services
+docker ps | grep jitsi
+
+# Check video bridge
+docker logs jitsi-jvb
+
+# Verify ports
+sudo ufw status
 ```
 
 ### WireGuard Issues
@@ -243,40 +330,68 @@ docker compose down -v
 docker compose up -d
 ```
 
+**For more troubleshooting**: See individual service guides (WIREGUARD_GUIDE.md, JITSI_GUIDE.md, MATRIX_GUIDE.md)
+
 ## 📚 Documentation
 
-- [Secrets Configuration Update](docs/GITHUB_SECRETS.md)
-- [Pre-Deployment Checklist](CHECKLIST.md)
-- [Quick Start Guide](QUICKSTART.md)
-- [Terraform Cloud Setup](docs/terraform-cloud-setup.md)
-- [GitHub Secrets Setup](docs/github-secrets-setup.md)
-- [Branch Protection](docs/branch-protection.md)
+### Service-Specific Guides
+- **[WireGuard VPN Guide](WIREGUARD_GUIDE.md)** - Complete VPN setup for all platforms
+- **[Jitsi Meet Guide](JITSI_GUIDE.md)** - Video conferencing setup and features
+- **[Matrix Guide](MATRIX_GUIDE.md)** - Messaging server and Element Web client
 
-## 🎯 Key Improvements
+### Setup Documentation
+- **[GitHub Secrets Setup](docs/GITHUB_SECRETS.md)** - Required secrets configuration
+- **[Domain Setup](docs/DOMAIN_SETUP.md)** - DNS and domain configuration
+- **[Terraform Cloud Setup](docs/terraform-cloud-setup.md)** - Terraform backend setup
 
-### ✅ No Manual Firewall Setup
+### Infrastructure Details
+- **[Deployment Info](DEPLOYMENT.md)** - CI/CD pipeline details
+- **[Project Structure](STRUCTURE.md)** - Repository organization
 
-- Firewall automatically created by Terraform
-- All rules defined in code
-- Can be destroyed and recreated
+## 🎯 Architecture Overview
 
-### ✅ Enhanced Performance
+```
+Internet
+    │
+    ├─→ DNS (Hetzner) ─→ yourdomain.com
+    │                     ├─→ vpn.yourdomain.com
+    │                     ├─→ meet.yourdomain.com
+    │                     ├─→ matrix.yourdomain.com
+    │                     └─→ chat.yourdomain.com
+    │
+    └─→ Hetzner Server (CX23 - Ubuntu 24.04)
+         ├─→ Traefik (Reverse Proxy + SSL)
+         │    ├─→ WireGuard UI (VPN Management)
+         │    ├─→ Jitsi Meet (Video Conferencing)
+         │    ├─→ Matrix Synapse (Messaging Server)
+         │    └─→ Element Web (Matrix Client)
+         │
+         ├─→ PostgreSQL (Matrix Database)
+         │
+         └─→ WireGuard (VPN Server - wg0 interface)
+              └─→ 10.0.0.0/24 network
+```
 
-- CX23 instance (8GB RAM, was 4GB)
-- Better for video conferencing
-- Handles more concurrent connections
+## 🚀 What's Deployed
 
-### ✅ All Config in GitHub Secrets
+- **10 Docker containers** running simultaneously
+- **7 DNS records** automatically configured
+- **Let's Encrypt SSL certificates** with auto-renewal
+- **Full CI/CD pipeline** with GitHub Actions
+- **Zero-downtime deployments** with health checks
+- **Automated backups** of Traefik certificates
 
-- No hardcoded credentials
-- Easy credential rotation
-- Secure storage
+## 🎨 Tech Stack
 
-### ✅ Galène Integration
-
-- Official installation method followed
-- Docker-based deployment
-- HTTP mode for IP-based access
+- **Infrastructure**: Terraform (Hetzner Cloud Provider)
+- **Configuration**: Ansible
+- **Containers**: Docker & Docker Compose
+- **Reverse Proxy**: Traefik v2.11
+- **SSL**: Let's Encrypt ACME
+- **VPN**: WireGuard + WireGuard UI
+- **Video**: Jitsi Meet (Prosody + Jicofo + JVB)
+- **Messaging**: Matrix Synapse + PostgreSQL + Element Web
+- **CI/CD**: GitHub Actions
 
 ## 🤝 Contributing
 
