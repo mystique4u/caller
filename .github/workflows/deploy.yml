@@ -9,6 +9,8 @@ on:
       - 'ansible/**'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/destroy.yml'
+      - '.github/workflows/backup.yml'
+      - '.github/workflows/restore.yml'
   workflow_dispatch:
     inputs:
       action:

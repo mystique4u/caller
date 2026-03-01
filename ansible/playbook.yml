@@ -702,59 +702,68 @@
           # Create local temporary backup directory
           mkdir -p "${LOCAL_BACKUP_DIR}"
           
-          # 1. Backup PostgreSQL database
-          echo "Backing up PostgreSQL database..."
+          # 1. Backup PostgreSQL database (Matrix users, rooms, messages, state)
+          echo "📦 Backing up PostgreSQL database (Matrix users, rooms, messages)..."
           docker exec matrix-postgres pg_dump -U synapse synapse | gzip > "${LOCAL_BACKUP_DIR}/matrix-postgres-${BACKUP_DATE}.sql.gz"
           
-          # 2. Backup Matrix Synapse data
-          echo "Backing up Matrix Synapse data..."
+          # 2. Backup Matrix Synapse data (media files, avatars, uploads, config)
+          echo "📦 Backing up Matrix Synapse data (media files, avatars, uploads)..."
           tar -czf "${LOCAL_BACKUP_DIR}/matrix-data-${BACKUP_DATE}.tar.gz" -C /opt/services/matrix .
           
-          # 3. Backup Jitsi configs
-          echo "Backing up Jitsi configs..."
+          # 3. Backup Jitsi configs (Prosody user accounts, room configs, certificates)
+          echo "📦 Backing up Jitsi configs (Prosody user accounts in /config/data/)..."
           tar -czf "${LOCAL_BACKUP_DIR}/jitsi-${BACKUP_DATE}.tar.gz" -C /opt/services/jitsi .
           
-          # 4. Backup WireGuard configs
-          echo "Backing up WireGuard configs..."
+          # 4. Backup WireGuard configs (server keys, wg0.conf)
+          echo "📦 Backing up WireGuard server configs (private keys, wg0.conf)..."
           tar -czf "${LOCAL_BACKUP_DIR}/wireguard-${BACKUP_DATE}.tar.gz" -C /etc wireguard
+          
+          # 5. Backup WireGuard UI database (client configs, QR codes, user accounts)
+          echo "📦 Backing up WireGuard UI database (client configs, users)..."
           tar -czf "${LOCAL_BACKUP_DIR}/wireguard-ui-${BACKUP_DATE}.tar.gz" -C /opt/services/wireguard-ui .
           
-          # 5. Backup Traefik SSL certificates
-          echo "Backing up Traefik SSL certificates..."
+          # 6. Backup Traefik SSL certificates (Let's Encrypt certs, acme.json)
+          echo "📦 Backing up Traefik SSL certificates (acme.json)..."
           tar -czf "${LOCAL_BACKUP_DIR}/traefik-${BACKUP_DATE}.tar.gz" -C /opt/services/traefik .
           
-          # 6. Create manifest file
-          echo "Creating backup manifest..."
+          # 7. Create manifest file with backup details
+          echo "📝 Creating backup manifest..."
           cat > "${LOCAL_BACKUP_DIR}/MANIFEST.txt" << EOF
+          ==========================================
+          BACKUP MANIFEST
+          ==========================================
           Backup Date: $(date)
           Hostname: $(hostname)
           IP Address: $(hostname -I | awk '{print $1}')
           
-          Files in this backup:
+          BACKED UP COMPONENTS:
+          ✅ Matrix PostgreSQL Database (users, rooms, messages)
+          ✅ Matrix Synapse Data (media files, avatars, config)
+          ✅ Jitsi Prosody (user accounts, room configs)
+          ✅ WireGuard Server (private keys, wg0.conf)
+          ✅ WireGuard UI (client configs, user accounts)
+          ✅ Traefik (SSL certificates, acme.json)
+          
+          FILES IN THIS BACKUP:
           $(ls -lh ${LOCAL_BACKUP_DIR})
           
           Total backup size: $(du -sh ${LOCAL_BACKUP_DIR} | awk '{print $1}')
+          ==========================================
           EOF
           
-          # 7. Upload to Storage Box using lftp (supports resuming)
-          echo "Uploading to Storage Box..."
+          # 8. Upload to Storage Box using lftp (supports resuming)
+          echo "☁️  Uploading to Storage Box..."
           lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_COMMANDS
           set sftp:auto-confirm yes
           set ssl:verify-certificate no
-          mkdir -p ${REMOTE_BASE}/matrix
-          mkdir -p ${REMOTE_BASE}/postgres
-          mkdir -p ${REMOTE_BASE}/jitsi
-          mkdir -p ${REMOTE_BASE}/wireguard
-          mkdir -p ${REMOTE_BASE}/traefik
+          mkdir -p ${REMOTE_BASE}
           cd ${REMOTE_BASE}
           lcd ${LOCAL_BACKUP_DIR}
           mput *.gz
           put MANIFEST.txt
           bye
-          LFTP_COMMANDS
-          
-          # 8. Cleanup old backups on Storage Box (keep last 7 days)
-          echo "Cleaning up old backups..."
+          # 9. Cleanup old backups on Storage Box (keep last 7 days)
+          echo "🧹 Cleaning up old backups (keeping last 7)..."
           lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_CLEANUP
           set sftp:auto-confirm yes
           set ssl:verify-certificate no
@@ -763,11 +772,15 @@
           bye
           LFTP_CLEANUP
           
-          # 9. Cleanup local backup
-          echo "Cleaning up local temporary files..."
+          # 10. Cleanup local backup
+          echo "🗑️  Cleaning up local temporary files..."
           rm -rf "${LOCAL_BACKUP_DIR}"
           
-          echo "=== Backup completed successfully at $(date) ==="
+          echo "========================================"
+          echo "✅ Backup completed successfully!"
+          echo "Uploaded to: ${REMOTE_BASE}"
+          echo "Finished at: $(date)"
+          echo "========================================"
         dest: /opt/backup/backup.sh
         mode: '0700'
 
@@ -791,10 +804,15 @@
         STORAGEBOX_HOST: "{{ lookup('env', 'STORAGEBOX_HOST') }}"
         STORAGEBOX_USER: "{{ lookup('env', 'STORAGEBOX_USER') }}"
         STORAGEBOX_PASSWORD: "{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
-      async: 600
-      poll: 0
-      register: backup_job
+      register: backup_result
+      ignore_errors: yes
 
-    - name: Display backup job info
+    - name: Display backup results
       debug:
-        msg: "Initial backup started in background. Check /var/log/backup.log for progress."
+        msg: "{{ backup_result.stdout_lines | default(['Backup completed']) }}"
+      when: backup_result is defined
+
+    - name: Display backup errors if any
+      debug:
+        msg: "{{ backup_result.stderr_lines | default(['No errors']) }}"
+      when: backup_result is defined and backup_result.failed
