@@ -524,6 +524,9 @@
               "https://scalar-staging.vector.im/api",
               "https://scalar-staging.riot.im/scalar/api"
             ],
+            "jitsi": {
+              "preferredDomain": "meet.{{ domain_name }}"
+            },
             "bug_report_endpoint_url": "https://element.io/bugreports/submit",
             "defaultCountryCode": "GB",
             "showLabsSettings": true,
