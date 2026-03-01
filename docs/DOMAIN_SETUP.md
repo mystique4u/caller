@@ -106,14 +106,15 @@ git push origin main
 
 ### DNS Records (Automatic)
 
-| Record Type | Name   | Points To           | Purpose        |
-| ----------- | ------ | ------------------- | -------------- |
-| A           | `@`    | Server IPv4         | Root domain    |
-| A           | `www`  | Server IPv4         | WWW subdomain  |
-| A           | `vpn`  | Server IPv4         | WireGuard UI   |
-| A           | `meet` | Server IPv4         | Galène Video   |
-| AAAA        | `@`    | Server IPv6         | IPv6 support   |
-| NS          | `@`    | Hetzner nameservers | DNS delegation |
+| Record Type | Name     | Points To           | Purpose          |
+| ----------- | -------- | ------------------- | ---------------- |
+| A           | `@`      | Server IPv4         | Root domain      |
+| A           | `www`    | Server IPv4         | WWW subdomain    |
+| A           | `vpn`    | Server IPv4         | WireGuard UI     |
+| A           | `meet`   | Server IPv4         | Jitsi Meet       |
+| A           | `matrix` | Server IPv4         | Matrix Synapse   |
+| A           | `chat`   | Server IPv4         | Element Web      |
+| AAAA        | `@`      | Server IPv6         | IPv6 support     |
 
 ### SSL Certificates (Automatic)
 
@@ -123,6 +124,8 @@ Let's Encrypt certificates for:
 - `www.yourdomain.com`
 - `vpn.yourdomain.com`
 - `meet.yourdomain.com`
+- `matrix.yourdomain.com`
+- `chat.yourdomain.com`
 
 **Auto-renewal**: Traefik handles renewal before expiry (every 60 days)
 
@@ -130,29 +133,17 @@ Let's Encrypt certificates for:
 
 ## Access Your Services
 
-After DNS propagation:
+After DNS propagation (typically 1-24 hours):
 
-### With HTTPS (Domain configured)
+| Service           | URL                                      | Documentation                |
+| ----------------- | ---------------------------------------- | ---------------------------- |
+| WireGuard UI      | `https://vpn.yourdomain.com`             | [Guide](../WIREGUARD_GUIDE.md) |
+| Jitsi Meet        | `https://meet.yourdomain.com`            | [Guide](../JITSI_GUIDE.md)     |
+| Matrix Synapse    | `https://matrix.yourdomain.com`          | [Guide](../MATRIX_GUIDE.md)    |
+| Element Web       | `https://chat.yourdomain.com`            | [Guide](../MATRIX_GUIDE.md)    |
+| Traefik Dashboard | `https://yourdomain.com:8080/dashboard/` | Monitoring only              |
 
-| Service           | URL                                      | Credentials     |
-| ----------------- | ---------------------------------------- | --------------- |
-| WireGuard UI      | `https://vpn.yourdomain.com`             | admin / admin   |
-| Galène Video      | `https://meet.yourdomain.com`            | See below       |
-| Traefik Dashboard | `https://yourdomain.com:8080/dashboard/` | None (insecure) |
-
-### Without Domain (IP only)
-
-| Service           | URL                                | Credentials   |
-| ----------------- | ---------------------------------- | ------------- |
-| WireGuard UI      | `http://SERVER_IP/wireguard`       | admin / admin |
-| Galène Video      | `http://SERVER_IP/galene`          | See below     |
-| Traefik Dashboard | `http://SERVER_IP:8080/dashboard/` | None          |
-
-### Galène Access
-
-- **Room**: `public`
-- **Operator password**: `admin`
-- **User access**: No password (public room)
+**Note**: All credentials are configured via GitHub Secrets. See [GITHUB_SECRETS.md](GITHUB_SECRETS.md) for setup.
 
 ---
 
@@ -241,16 +232,16 @@ docker compose up -d
 
 ## Security Best Practices
 
-✅ **Change default passwords immediately**:
+✅ **All credentials in GitHub Secrets**:
+- No default passwords stored in code
+- All service credentials configured securely
+- See [GITHUB_SECRETS.md](GITHUB_SECRETS.md) for setup
 
-- WireGuard UI: admin / admin → Change in settings
-- Galène operator: admin → Edit `/opt/services/galene/groups/public.json`
+✅ **Use strong passwords** (16+ characters recommended)
 
-✅ **Use strong passwords** (16+ characters)
+✅ **Enable 2FA** on GitHub and domain registrar accounts
 
-✅ **Enable 2FA** where available
-
-✅ **Monitor certificate expiry** (auto-renewed by Traefik)
+✅ **Monitor certificate expiry** (auto-renewed by Traefik every 60 days)
 
 ✅ **Keep services updated**:
 

@@ -3,11 +3,13 @@
 ## Required Secrets List
 
 Configure these secrets in GitHub at:  
-`https://github.com/mystique4u/caller/settings/secrets/actions`
+`Settings` → `Secrets and variables` → `Actions` → `New repository secret`
 
 ---
 
-## 1. TF_API_TOKEN
+## Infrastructure Secrets
+
+### 1. TF_API_TOKEN
 
 **Purpose**: Terraform Cloud authentication for remote state storage
 
@@ -24,9 +26,9 @@ Configure these secrets in GitHub at:
 
 ---
 
-## 2. HCLOUD_TOKEN
+### 2. HCLOUD_TOKEN
 
-**Purpose**: Hetzner Cloud API access for creating infrastructure
+**Purpose**: Hetzner Cloud API access for creating infrastructure and managing DNS
 
 **How to get it**:
 
@@ -42,11 +44,11 @@ Configure these secrets in GitHub at:
 
 **Example**: `A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0`
 
-**Note**: This token is used for both servers AND DNS management (integrated API)
+**Note**: This token manages both servers AND DNS (Hetzner unified API)
 
 ---
 
-## 3. DOMAIN_NAME
+### 3. DOMAIN_NAME
 
 **Purpose**: Your custom domain for HTTPS access
 
@@ -59,15 +61,16 @@ Configure these secrets in GitHub at:
 
 **Examples**: `mydomain.com` or `myvpn.net`
 
-**Note**: Leave empty to use IP address only (HTTP). With domain, you get:
-
-- `https://vpn.yourdomain.com` - WireGuard UI
-- `https://meet.yourdomain.com` - Galène Video
-- `https://yourdomain.com:8080/dashboard/` - Traefik Dashboard
+**Subdomains automatically configured**:
+- `vpn.yourdomain.com` - WireGuard UI
+- `meet.yourdomain.com` - Jitsi Meet
+- `matrix.yourdomain.com` - Matrix Synapse
+- `chat.yourdomain.com` - Element Web
+- `yourdomain.com:8080/dashboard/` - Traefik
 
 ---
 
-## 4. EMAIL_ADDRESS
+### 4. EMAIL_ADDRESS
 
 **Purpose**: Email for Let's Encrypt SSL certificate notifications
 
@@ -75,28 +78,28 @@ Configure these secrets in GitHub at:
 
 **Examples**: `admin@mydomain.com` or `you@gmail.com`
 
-**Note**: Optional, defaults to `admin@yourdomain.com` if not set
+**Note**: Required for SSL certificates
 
 ---
 
-## 5. FIREWALL_NAME
+### 5. FIREWALL_NAME
 
 **Purpose**: Name for the firewall (auto-created by Terraform)
 
 **Value**: `vpn-services-firewall`
 
-**Note**: This firewall will be created automatically. No manual setup needed!
+**Note**: This firewall is created automatically. No manual setup needed!
 
 ---
 
-## 7. SSH_KEY_IDS
+### 6. SSH_KEY_IDS
 
 **Purpose**: SSH key IDs for server access (as JSON array)
 
 **How to get it**:
 
-1. Your current SSH key ID is: `108153935`
-2. If you need to find it: `hcloud ssh-key list`
+1. List your SSH keys: `hcloud ssh-key list`
+2. Use the numeric ID(s)
 
 **Value format**: JSON array of numbers: `[108153935]`
 
@@ -106,14 +109,14 @@ Configure these secrets in GitHub at:
 
 ---
 
-## 8. SSH_PRIVATE_KEY
+### 7. SSH_PRIVATE_KEY
 
 **Purpose**: Private SSH key for Ansible to configure the server
 
 **How to get it**:
 
 ```bash
-cat ~/.ssh/hetzner-wireguard
+cat ~/.ssh/your-private-key
 ```
 
 **Value format**: Full SSH private key including headers
@@ -137,52 +140,138 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
 
 ---
 
-## Quick Reference Table
+## Service Credentials
 
-| Secret Name       | Type       | Example Value           | Required |
-| ----------------- | ---------- | ----------------------- | -------- |
-| `TF_API_TOKEN`    | String     | `TYBeJ4Gh8NK...`        | Yes      |
-| `HCLOUD_TOKEN`    | String     | `A1B2C3D4E5F6...`       | Yes      |
-| `DOMAIN_NAME`     | String     | `example.com`           | No\*     |
-| `EMAIL_ADDRESS`   | String     | `admin@example.com`     | No       |
-| `FIREWALL_NAME`   | String     | `vpn-services-firewall` | Yes      |
-| `SSH_KEY_IDS`     | JSON Array | `[108153935]`           | Yes      |
-| `SSH_PRIVATE_KEY` | Multi-line | `-----BEGIN OPENSSH...` | Yes      |
+### 8. JITSI_ADMIN_USER
 
-\* Required only if you want HTTPS with custom domain. Without domain, services use HTTP with IP address.
+**Purpose**: Admin username for Jitsi Meet authentication
 
-**Note**: The `HCLOUD_TOKEN` now manages both servers AND DNS (Hetzner unified the APIs).
+**Value format**: Any username (lowercase, no spaces)
+
+**Example**: `admin` or `jitsiadmin`
+
+**Note**: This user can create and moderate video conferences
 
 ---
 
-## Two Deployment Modes
+### 9. JITSI_ADMIN_PASSWORD
 
-### Mode 1: IP Address Only (HTTP)
+**Purpose**: Admin password for Jitsi Meet
 
-**Requires**: `TF_API_TOKEN`, `HCLOUD_TOKEN`, `FIREWALL_NAME`, `SSH_KEY_IDS`, `SSH_PRIVATE_KEY`
+**Value format**: Strong password (minimum 12 characters recommended)
 
-**Access**:
+**Example**: `MySecurePass123!`
 
-- WireGuard UI: `http://SERVER_IP/wireguard`
-- Galène Video: `http://SERVER_IP/galene`
-- Traefik Dashboard: `http://SERVER_IP:8080/dashboard/`
+**Security**: Use a unique, strong password. Store it securely!
 
-### Mode 2: Custom Domain (HTTPS)
+---
 
-**Requires**: All secrets from Mode 1 + `DOMAIN_NAME`, `EMAIL_ADDRESS`
+### 10. MATRIX_ADMIN_USER
 
-**Access**:
+**Purpose**: Admin username for Matrix messaging server
 
-- WireGuard UI: `https://vpn.yourdomain.com`
-- Galène Video: `https://meet.yourdomain.com`
-- Traefik Dashboard: `https://yourdomain.com:8080/dashboard/`
+**Value format**: Username only (no @ symbol or domain)
 
-**DNS Setup**:  
-DNS is automatically managed by Hetzner Cloud API. Update nameservers at your domain registrar to:
+**Example**: `admin` or `matrixadmin`
+
+**Login as**: `@MATRIX_ADMIN_USER:yourdomain.com`
+
+---
+
+### 11. MATRIX_ADMIN_PASSWORD
+
+**Purpose**: Admin password for Matrix account
+
+**Value format**: Strong password (minimum 12 characters recommended)
+
+**Example**: `MatrixSecure456!`
+
+**Note**: User is auto-created during deployment
+
+---
+
+### 12. MATRIX_REGISTRATION_SECRET
+
+**Purpose**: Secret key for Matrix registration (security feature)
+
+**Value format**: Random string (minimum 20 characters)
+
+**How to generate**:
+
+```bash
+openssl rand -base64 32
+```
+
+**Example**: `rK9mN2pQ7sT4vX8zA3bC5dE6fG8hJ0kL2mN5oP7qR9s`
+
+---
+
+### 13. MATRIX_POSTGRES_PASSWORD
+
+**Purpose**: PostgreSQL database password for Matrix
+
+**Value format**: Strong password (minimum 12 characters)
+
+**How to generate**:
+
+```bash
+openssl rand -base64 24
+```
+
+**Example**: `DbSecure789XyZ!@#$`
+
+**Note**: Never used directly - only by Matrix Synapse internally
+
+---
+
+## Quick Reference Table
+
+### Infrastructure Secrets (Required)
+
+| Secret Name       | Type       | Example Value           |
+| ----------------- | ---------- | ----------------------- |
+| `TF_API_TOKEN`    | String     | `TYBeJ4Gh8NK...`        |
+| `HCLOUD_TOKEN`    | String     | `A1B2C3D4E5F6...`       |
+| `DOMAIN_NAME`     | String     | `example.com`           |
+| `EMAIL_ADDRESS`   | String     | `admin@example.com`     |
+| `FIREWALL_NAME`   | String     | `vpn-services-firewall` |
+| `SSH_KEY_IDS`     | JSON Array | `[108153935]`           |
+| `SSH_PRIVATE_KEY` | Multi-line | `-----BEGIN OPENSSH...` |
+
+### Service Credentials (Required)
+
+| Secret Name                  | Type   | Example Value        |
+| ---------------------------- | ------ | -------------------- |
+| `JITSI_ADMIN_USER`           | String | `admin`              |
+| `JITSI_ADMIN_PASSWORD`       | String | `MySecurePass123!`   |
+| `MATRIX_ADMIN_USER`          | String | `admin`              |
+| `MATRIX_ADMIN_PASSWORD`      | String | `MatrixSecure456!`   |
+| `MATRIX_REGISTRATION_SECRET` | String | `rK9mN2pQ7sT4...`    |
+| `MATRIX_POSTGRES_PASSWORD`   | String | `DbSecure789XyZ!@#$` |
+
+---
+
+## DNS Setup
+
+DNS is automatically managed by Hetzner Cloud API using your `HCLOUD_TOKEN`.
+
+**Update nameservers at your domain registrar to**:
 
 - `hydrogen.ns.hetzner.com`
 - `oxygen.ns.hetzner.com`
 - `helium.ns.hetzner.de`
+
+**Records automatically created**:
+
+| Type | Subdomain | Target      | Service        |
+| ---- | --------- | ----------- | -------------- |
+| A    | @         | Server IPv4 | Root domain    |
+| AAAA | @         | Server IPv6 | Root IPv6      |
+| A    | www       | Server IPv4 | WWW subdomain  |
+| A    | vpn       | Server IPv4 | WireGuard UI   |
+| A    | meet      | Server IPv4 | Jitsi Meet     |
+| A    | matrix    | Server IPv4 | Matrix Synapse |
+| A    | chat      | Server IPv4 | Element Web    |
 
 ---
 
@@ -191,13 +280,85 @@ DNS is automatically managed by Hetzner Cloud API. Update nameservers at your do
 After adding all secrets:
 
 1. **Check secrets are set**:
-   - Go to `https://github.com/mystique4u/caller/settings/secrets/actions`
-   - Required: `TF_API_TOKEN`, `HCLOUD_TOKEN`, `FIREWALL_NAME`, `SSH_KEY_IDS`, `SSH_PRIVATE_KEY`
-   - Optional: `DOMAIN_NAME`, `EMAIL_ADDRESS`
+   - Go to `Settings` → `Secrets and variables` → `Actions`
+   - Verify all 13 secrets are configured
 
 2. **Test deployment**:
    - Go to **Actions** tab
-   - Run "Destroy and Redeploy" workflow
+   - Run "Deploy Infrastructure" workflow
+   - Wait ~10 minutes for completion
+
+3. **Update DNS nameservers**:
+   - Login to your domain registrar
+   - Update nameservers to Hetzner's
+   - Wait 1-24 hours for DNS propagation
+
+4. **Access services**:
+   - WireGuard UI: `https://vpn.yourdomain.com`
+   - Jitsi Meet: `https://meet.yourdomain.com`
+   - Element Web: `https://chat.yourdomain.com`
+   - Matrix Server: `https://matrix.yourdomain.com`
+
+---
+
+## Security Best Practices
+
+1. **Use strong, unique passwords** for all service credentials
+2. **Generate random secrets** using `openssl rand -base64 32`
+3. **Never commit secrets** to Git repository
+4. **Rotate passwords regularly** (every 90 days recommended)
+5. **Use a password manager** to store credentials securely
+6. **Enable 2FA** on your GitHub account
+7. **Limit repository access** to trusted team members only
+
+---
+
+## Troubleshooting
+
+### Secret Not Working
+
+- Ensure no extra spaces or newlines
+- For JSON arrays, verify bracket syntax: `[123]`
+- For SSH keys, include complete key with headers
+- Restart workflow after updating secrets
+
+### DNS Not Resolving
+
+- Verify nameservers updated at registrar
+- Wait 24 hours for full DNS propagation
+- Test with: `dig yourdomain.com NS`
+
+### SSL Certificate Issues
+
+- Verify EMAIL_ADDRESS is valid
+- Check Traefik logs: `docker logs traefik | grep acme`
+- Ensure ports 80 and 443 are open
+
+---
+
+## Quick Setup Script
+
+Generate all required passwords at once:
+
+```bash
+echo "=== Service Passwords ==="
+echo "JITSI_ADMIN_PASSWORD:      $(openssl rand -base64 16)"
+echo "MATRIX_ADMIN_PASSWORD:     $(openssl rand -base64 16)"
+echo "MATRIX_REGISTRATION_SECRET: $(openssl rand -base64 32)"
+echo "MATRIX_POSTGRES_PASSWORD:   $(openssl rand -base64 24)"
+```
+
+Copy the output and add each value as a GitHub Secret.
+
+---
+
+## Related Documentation
+
+- **[Main README](../README.md)** - Project overview
+- **[WireGuard Guide](../WIREGUARD_GUIDE.md)** - VPN setup
+- **[Jitsi Guide](../JITSI_GUIDE.md)** - Video conferencing
+- **[Matrix Guide](../MATRIX_GUIDE.md)** - Messaging server
+- **[Domain Setup](DOMAIN_SETUP.md)** - DNS configuration
    - Type `DESTROY` to confirm
    - Wait for completion (~10-15 minutes)
 

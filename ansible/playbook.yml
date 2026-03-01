@@ -569,12 +569,6 @@
       register: docker_result
       until: docker_result.rc == 0
 
-    - name: Remove old Galene container if exists
-      community.docker.docker_container:
-        name: galene
-        state: absent
-      ignore_errors: yes
-
     - name: Wait for services to be ready
       wait_for:
         port: "{{ item }}"
