@@ -51,13 +51,20 @@ jobs:
       - name: Check for secrets in code
         run: |
           echo "🔍 Scanning for potential secrets..."
-          # Exclude .example, .sample, .template files and comments
+          # Exclude:
+          # - .example, .sample, .template files
+          # - Comments
+          # - Ansible lookup('env', ...) patterns (correct way to use env vars)
+          # - GitHub Secrets references
           if grep -r -i -E "(password|secret|api_key|token).*=.*['\"][^'\"]{8,}['\"]" \
             --exclude="*.example" \
             --exclude="*.sample" \
             --exclude="*.template" \
             --exclude="README.md" \
-            terraform/ ansible/ 2>/dev/null | grep -v "^[[:space:]]*#"; then
+            terraform/ ansible/ 2>/dev/null | \
+            grep -v "^[[:space:]]*#" | \
+            grep -v "lookup('env'" | \
+            grep -v "secrets\." ; then
             echo "::error::Found potential hardcoded secrets in actual code!"
             echo "::error::Use GitHub Secrets instead of hardcoding sensitive values"
             exit 1
