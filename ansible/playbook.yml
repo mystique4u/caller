@@ -398,6 +398,8 @@
                 - "traefik.http.services.matrix.loadbalancer.server.port=8008"
                 - "traefik.http.services.matrix.loadbalancer.server.scheme=http"
                 - "traefik.http.routers.matrix.tls.certresolver=letsencrypt"
+                - "traefik.http.middlewares.upload-limit.buffering.maxRequestBodyBytes=1073741824"
+                - "traefik.http.routers.matrix.middlewares=upload-limit"
               depends_on:
                 - matrix-postgres
 
@@ -503,6 +505,13 @@
         line: 'registration_shared_secret: "{{ matrix_registration_secret }}"'
         backup: yes
       when: matrix_registration_secret is defined
+
+    - name: Set max upload size to 1GB
+      lineinfile:
+        path: /opt/services/matrix/synapse/homeserver.yaml
+        regexp: '^max_upload_size:'
+        line: 'max_upload_size: 1073741824'
+        backup: yes
 
     - name: Create Element Web configuration
       copy:
