@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       username:
-        description: 'Username for the new Matrix user (without @ or domain)'
+        description: 'Username for the new Matrix user (alphanumeric, underscores, hyphens only)'
         required: true
         type: string
       password:
-        description: 'Password for the new Matrix user'
+        description: 'Password for the new Matrix user (min 8 characters)'
         required: true
         type: string
       is_admin:
@@ -21,8 +21,26 @@ jobs:
   create-matrix-user:
     name: Create Matrix User
     runs-on: ubuntu-latest
+    # Only allow repository owners/maintainers to trigger this workflow
+    if: github.actor == 'mystique4u' || contains(github.actor, 'admin') || contains(github.actor, 'maintainer')
 
     steps:
+      - name: Validate inputs
+        run: |
+          # Validate username format (alphanumeric, underscores, hyphens only)
+          if [[ ! "${{ github.event.inputs.username }}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            echo "❌ Invalid username format. Only alphanumeric characters, underscores, and hyphens allowed."
+            exit 1
+          fi
+          
+          # Validate password length
+          if [[ ${#PASSWORD} -lt 8 ]]; then
+            echo "❌ Password must be at least 8 characters long."
+            exit 1
+          fi
+          
+          echo "✅ Input validation passed"
+
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
@@ -40,12 +58,24 @@ jobs:
             ADMIN_FLAG="--no-admin"
             USER_TYPE="regular"
           fi
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} "DOMAIN=${{ secrets.DOMAIN_NAME }} ADMIN_FLAG=$ADMIN_FLAG USER_TYPE=$USER_TYPE USERNAME=${{ github.event.inputs.username }} PASSWORD=${{ github.event.inputs.password }} bash -s" << 'EOF'
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes root@${{ secrets.SERVER_IP }} "DOMAIN=${{ secrets.DOMAIN_NAME }} ADMIN_FLAG=$ADMIN_FLAG USER_TYPE=$USER_TYPE USERNAME=${{ github.event.inputs.username }} PASSWORD=${{ github.event.inputs.password }} bash -s" << 'EOF'
+          # Additional server-side validation
+          if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            echo "❌ Server validation failed: Invalid username format"
+            exit 1
+          fi
+          
           docker exec matrix-synapse register_new_matrix_user \
-            -u $USERNAME \
-            -p $PASSWORD \
+            -u "$USERNAME" \
+            -p "$PASSWORD" \
             $ADMIN_FLAG \
             -c /data/homeserver.yaml \
             http://localhost:8008
-          echo "✅ Matrix $USER_TYPE user created successfully: @$USERNAME@$DOMAIN"
+          
+          if [[ $? -eq 0 ]]; then
+            echo "✅ Matrix $USER_TYPE user created successfully: @$USERNAME@$DOMAIN"
+          else
+            echo "❌ Failed to create Matrix user"
+            exit 1
+          fi
           EOF
