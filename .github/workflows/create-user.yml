@@ -18,9 +18,39 @@ on:
         type: boolean
 
 jobs:
+  get-server-ip:
+    name: Get Server IP from Terraform
+    runs-on: ubuntu-latest
+    outputs:
+      server_ip: ${{ steps.terraform_output.outputs.server_ip }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+        
+      - name: Get Server IP
+        id: terraform_output
+        working-directory: terraform
+        run: |
+          SERVER_IP=$(terraform output -raw public_ip)
+          echo "server_ip=$SERVER_IP" >> $GITHUB_OUTPUT
+          echo "✅ Server IP retrieved: $SERVER_IP"
+
   create-user:
     name: Create User for Matrix and Jitsi
     runs-on: ubuntu-latest
+    needs: get-server-ip
     # Only allow repository owners/maintainers to trigger this workflow
     if: github.actor == 'mystique4u' || contains(github.actor, 'admin') || contains(github.actor, 'maintainer')
 
@@ -51,7 +81,7 @@ jobs:
           USERNAME: ${{ github.event.inputs.username }}
           PASSWORD: ${{ github.event.inputs.password }}
           IS_ADMIN: ${{ github.event.inputs.is_admin }}
-          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
         run: |
           echo "🔧 Creating Matrix user..."
@@ -62,12 +92,6 @@ jobs:
           if [ "$IS_ADMIN" = "true" ]; then
             ADMIN_FLAG="--admin"
             USER_TYPE="admin"
-          fi
-          
-          # Verify SERVER_IP is set
-          if [ -z "$SERVER_IP" ]; then
-            echo "❌ ERROR: SERVER_IP secret is not set in GitHub repository settings"
-            exit 1
           fi
           
           # Export SSH key
@@ -90,7 +114,7 @@ jobs:
         env:
           USERNAME: ${{ github.event.inputs.username }}
           PASSWORD: ${{ github.event.inputs.password }}
-          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           echo "🔧 Creating Jitsi user..."
           
