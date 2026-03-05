@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       username:
-        description: 'Username for the new Jitsi user'
+        description: 'Username for the new Jitsi user (alphanumeric, dots, hyphens only)'
         required: true
         type: string
       password:
-        description: 'Password for the new Jitsi user'
+        description: 'Password for the new Jitsi user (min 8 characters)'
         required: true
         type: string
 
@@ -16,8 +16,26 @@ jobs:
   create-jitsi-user:
     name: Create Jitsi User
     runs-on: ubuntu-latest
+    # Only allow repository owners/maintainers to trigger this workflow
+    if: github.actor == 'mystique4u' || contains(github.actor, 'admin') || contains(github.actor, 'maintainer')
 
     steps:
+      - name: Validate inputs
+        run: |
+          # Validate username format (alphanumeric, dots, hyphens only)
+          if [[ ! "${{ github.event.inputs.username }}" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+            echo "❌ Invalid username format. Only alphanumeric characters, dots, and hyphens allowed."
+            exit 1
+          fi
+          
+          # Validate password length
+          if [[ ${#PASSWORD} -lt 8 ]]; then
+            echo "❌ Password must be at least 8 characters long."
+            exit 1
+          fi
+          
+          echo "✅ Input validation passed"
+
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
@@ -28,9 +46,21 @@ jobs:
       - name: Create Jitsi User
         run: |
           echo "🔧 Creating Jitsi user: ${{ github.event.inputs.username }}"
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} "USERNAME=${{ github.event.inputs.username }} PASSWORD=${{ github.event.inputs.password }} bash -s" << 'EOF'
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes root@${{ secrets.SERVER_IP }} "USERNAME=${{ github.event.inputs.username }} PASSWORD=${{ github.event.inputs.password }} bash -s" << 'EOF'
+          # Additional server-side validation
+          if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+            echo "❌ Server validation failed: Invalid username format"
+            exit 1
+          fi
+          
           docker exec jitsi-prosody prosodyctl \
             --config /config/prosody.cfg.lua \
-            register $USERNAME auth.meet.jitsi $PASSWORD
-          echo "✅ Jitsi user created successfully: $USERNAME@auth.meet.jitsi"
+            register "$USERNAME" auth.meet.jitsi "$PASSWORD"
+          
+          if [[ $? -eq 0 ]]; then
+            echo "✅ Jitsi user created successfully: $USERNAME@auth.meet.jitsi"
+          else
+            echo "❌ Failed to create Jitsi user"
+            exit 1
+          fi
           EOF
