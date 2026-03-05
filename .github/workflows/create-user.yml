@@ -27,6 +27,10 @@ jobs:
     steps:
       - name: Validate inputs
         run: |
+          # Mask sensitive data first
+          echo "::add-mask::${{ github.event.inputs.username }}"
+          echo "::add-mask::${{ github.event.inputs.password }}"
+          
           # Validate username format (alphanumeric, underscores, hyphens, dots)
           if [[ ! "${{ github.event.inputs.username }}" =~ ^[a-zA-Z0-9._-]+$ ]]; then
             echo "❌ Invalid username format. Only alphanumeric characters, underscores, hyphens, and dots allowed."
@@ -43,18 +47,27 @@ jobs:
           echo "✅ Input validation passed"
 
       - name: Create Matrix User
+        env:
+          USERNAME: ${{ github.event.inputs.username }}
+          PASSWORD: ${{ github.event.inputs.password }}
+          IS_ADMIN: ${{ github.event.inputs.is_admin }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
         run: |
-          echo "🔧 Creating Matrix user: ${{ github.event.inputs.username }}"
-          
-          # Mask the password in logs
-          echo "::add-mask::${{ github.event.inputs.password }}"
+          echo "🔧 Creating Matrix user..."
           
           # Determine admin flag
           ADMIN_FLAG="--no-admin"
           USER_TYPE="regular"
-          if [ "${{ github.event.inputs.is_admin }}" = "true" ]; then
+          if [ "$IS_ADMIN" = "true" ]; then
             ADMIN_FLAG="--admin"
             USER_TYPE="admin"
+          fi
+          
+          # Verify SERVER_IP is set
+          if [ -z "$SERVER_IP" ]; then
+            echo "❌ ERROR: SERVER_IP secret is not set in GitHub repository settings"
+            exit 1
           fi
           
           # Export SSH key
@@ -63,57 +76,61 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           
           # Create Matrix user
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'ENDSSH'
           docker exec matrix-synapse register_new_matrix_user \
-            -u "${{ github.event.inputs.username }}" \
-            -p "${{ github.event.inputs.password }}" \
+            -u "${USERNAME}" \
+            -p "${PASSWORD}" \
             ${ADMIN_FLAG} \
             -c /data/homeserver.yaml \
             http://localhost:8008
-          echo "✅ Matrix ${USER_TYPE} user created successfully: @${{ github.event.inputs.username }}:${{ secrets.DOMAIN_NAME }}"
-          EOF
+          echo "✅ Matrix ${USER_TYPE} user created successfully: @${USERNAME}:${DOMAIN_NAME}"
+          ENDSSH
 
       - name: Create Jitsi User
+        env:
+          USERNAME: ${{ github.event.inputs.username }}
+          PASSWORD: ${{ github.event.inputs.password }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
         run: |
-          echo "🔧 Creating Jitsi user: ${{ github.event.inputs.username }}"
-          
-          # Mask the password in logs
-          echo "::add-mask::${{ github.event.inputs.password }}"
+          echo "🔧 Creating Jitsi user..."
           
           # Create Jitsi user
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'ENDSSH'
           docker exec jitsi-prosody prosodyctl \
             --config /config/prosody.cfg.lua \
-            register "${{ github.event.inputs.username }}" auth.meet.jitsi "${{ github.event.inputs.password }}"
-          echo "✅ Jitsi user created successfully: ${{ github.event.inputs.username }}@auth.meet.jitsi"
-          EOF
+            register "${USERNAME}" auth.meet.jitsi "${PASSWORD}"
+          echo "✅ Jitsi user created successfully: ${USERNAME}@auth.meet.jitsi"
+          ENDSSH
 
       - name: Summary
+        env:
+          USERNAME: ${{ github.event.inputs.username }}
+          IS_ADMIN: ${{ github.event.inputs.is_admin }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "✅ User Creation Complete"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           echo "📝 User Details:"
-          echo "  Username: ${{ github.event.inputs.username }}"
+          echo "  Username: [HIDDEN]"
           echo ""
           echo "🔐 Matrix Account:"
-          echo "  Full ID: @${{ github.event.inputs.username }}:${{ secrets.DOMAIN_NAME }}"
-          echo "  Login URL: https://chat.${{ secrets.DOMAIN_NAME }}"
-          if [ "${{ github.event.inputs.is_admin }}" = "true" ]; then
+          echo "  Full ID: @[HIDDEN]:${DOMAIN_NAME}"
+          echo "  Login URL: https://chat.${DOMAIN_NAME}"
+          if [ "$IS_ADMIN" = "true" ]; then
             echo "  Admin: Yes ✅"
           else
             echo "  Admin: No"
           fi
           echo ""
           echo "📹 Jitsi Account:"
-          echo "  Full ID: ${{ github.event.inputs.username }}@auth.meet.jitsi"
-          echo "  Meeting URL: https://meet.${{ secrets.DOMAIN_NAME }}"
+          echo "  Full ID: [HIDDEN]@auth.meet.jitsi"
+          echo "  Meeting URL: https://meet.${DOMAIN_NAME}"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📧 Share these credentials with the user:"
-          echo "  Username: ${{ github.event.inputs.username }}"
-          echo "  Password: [provided separately via secure channel]"
-          echo "  Matrix: https://chat.${{ secrets.DOMAIN_NAME }}"
-          echo "  Jitsi: https://meet.${{ secrets.DOMAIN_NAME }}"
+          echo "📧 Credentials have been created and should be"
+          echo "   shared with the user via a secure channel."
+          echo "  Matrix: https://chat.${DOMAIN_NAME}"
+          echo "  Jitsi: https://meet.${DOMAIN_NAME}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
