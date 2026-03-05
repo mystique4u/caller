@@ -59,7 +59,15 @@ jobs:
             ADMIN_FLAG="--no-admin"
             USER_TYPE="regular"
           fi
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} "DOMAIN=${{ secrets.DOMAIN_NAME }} ADMIN_FLAG=$ADMIN_FLAG USER_TYPE=$USER_TYPE USERNAME=${{ github.event.inputs.username }} PASSWORD=${{ github.event.inputs.password }} bash -s" << 'EOF'
+          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} << 'EOF'
+          set -e
+          
+          DOMAIN="${{ secrets.DOMAIN_NAME }}"
+          ADMIN_FLAG="$ADMIN_FLAG"
+          USER_TYPE="$USER_TYPE"
+          USERNAME="${{ github.event.inputs.username }}"
+          PASSWORD="${{ github.event.inputs.password }}"
+          
           # Additional server-side validation
           if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             echo "❌ Server validation failed: Invalid username format"
