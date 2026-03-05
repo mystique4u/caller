@@ -1,0 +1,51 @@
+name: Create Matrix User
+
+on:
+  workflow_dispatch:
+    inputs:
+      username:
+        description: 'Username for the new Matrix user (without @ or domain)'
+        required: true
+        type: string
+      password:
+        description: 'Password for the new Matrix user'
+        required: true
+        type: string
+      is_admin:
+        description: 'Create as admin user'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  create-matrix-user:
+    name: Create Matrix User
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Create Matrix User
+        run: |
+          echo "🔧 Creating Matrix user: ${{ github.event.inputs.username }}"
+          if [ "${{ github.event.inputs.is_admin }}" = "true" ]; then
+            ADMIN_FLAG="--admin"
+            USER_TYPE="admin"
+          else
+            ADMIN_FLAG="--no-admin"
+            USER_TYPE="regular"
+          fi
+          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} "DOMAIN=${{ secrets.DOMAIN_NAME }} ADMIN_FLAG=$ADMIN_FLAG USER_TYPE=$USER_TYPE USERNAME=${{ github.event.inputs.username }} PASSWORD=${{ github.event.inputs.password }} bash -s" << 'EOF'
+          docker exec matrix-synapse register_new_matrix_user \
+            -u $USERNAME \
+            -p $PASSWORD \
+            $ADMIN_FLAG \
+            -c /data/homeserver.yaml \
+            http://localhost:8008
+          echo "✅ Matrix $USER_TYPE user created successfully: @$USERNAME@$DOMAIN"
+          EOF
