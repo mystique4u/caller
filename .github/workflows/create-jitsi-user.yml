@@ -1,0 +1,36 @@
+name: Create Jitsi User
+
+on:
+  workflow_dispatch:
+    inputs:
+      username:
+        description: 'Username for the new Jitsi user'
+        required: true
+        type: string
+      password:
+        description: 'Password for the new Jitsi user'
+        required: true
+        type: string
+
+jobs:
+  create-jitsi-user:
+    name: Create Jitsi User
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Create Jitsi User
+        run: |
+          echo "🔧 Creating Jitsi user: ${{ github.event.inputs.username }}"
+          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} "USERNAME=${{ github.event.inputs.username }} PASSWORD=${{ github.event.inputs.password }} bash -s" << 'EOF'
+          docker exec jitsi-prosody prosodyctl \
+            --config /config/prosody.cfg.lua \
+            register $USERNAME auth.meet.jitsi $PASSWORD
+          echo "✅ Jitsi user created successfully: $USERNAME@auth.meet.jitsi"
+          EOF
