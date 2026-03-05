@@ -42,49 +42,33 @@ jobs:
           
           echo "✅ Input validation passed"
 
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
-
       - name: Create Matrix User
         run: |
           echo "🔧 Creating Matrix user: ${{ github.event.inputs.username }}"
+          
+          # Mask the password in logs
+          echo "::add-mask::${{ github.event.inputs.password }}"
+          
+          # Determine admin flag
+          ADMIN_FLAG="--no-admin"
+          USER_TYPE="regular"
           if [ "${{ github.event.inputs.is_admin }}" = "true" ]; then
             ADMIN_FLAG="--admin"
             USER_TYPE="admin"
-          else
-            ADMIN_FLAG="--no-admin"
-            USER_TYPE="regular"
-          fi
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} << 'EOF'
-          set -e
-          
-          DOMAIN="${{ secrets.DOMAIN_NAME }}"
-          ADMIN_FLAG="$ADMIN_FLAG"
-          USER_TYPE="$USER_TYPE"
-          USERNAME="${{ github.event.inputs.username }}"
-          PASSWORD="${{ github.event.inputs.password }}"
-          
-          # Additional server-side validation
-          if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            echo "❌ Server validation failed: Invalid username format"
-            exit 1
           fi
           
+          # Export SSH key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # Create user
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} << 'EOF'
           docker exec matrix-synapse register_new_matrix_user \
-            -u "$USERNAME" \
-            -p "$PASSWORD" \
+            -u "${{ github.event.inputs.username }}" \
+            -p "${{ github.event.inputs.password }}" \
             $ADMIN_FLAG \
             -c /data/homeserver.yaml \
             http://localhost:8008
-          
-          if [[ $? -eq 0 ]]; then
-            echo "✅ Matrix $USER_TYPE user created successfully: @$USERNAME@$DOMAIN"
-          else
-            echo "❌ Failed to create Matrix user"
-            exit 1
-          fi
+          echo "✅ Matrix $USER_TYPE user created successfully: @${{ github.event.inputs.username }}@${{ secrets.DOMAIN_NAME }}"
           EOF
