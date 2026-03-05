@@ -47,7 +47,12 @@ jobs:
       - name: Create Jitsi User
         run: |
           echo "🔧 Creating Jitsi user: ${{ github.event.inputs.username }}"
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} "USERNAME=${{ github.event.inputs.username }} PASSWORD=${{ github.event.inputs.password }} bash -s" << 'EOF'
+          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} << 'EOF'
+          set -e
+          
+          USERNAME="${{ github.event.inputs.username }}"
+          PASSWORD="${{ github.event.inputs.password }}"
+          
           # Additional server-side validation
           if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9.-]+$ ]]; then
             echo "❌ Server validation failed: Invalid username format"
