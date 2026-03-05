@@ -99,16 +99,15 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          # Create Matrix user
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'ENDSSH'
-          docker exec matrix-synapse register_new_matrix_user \
-            -u "${USERNAME}" \
-            -p "${PASSWORD}" \
-            ${ADMIN_FLAG} \
-            -c /data/homeserver.yaml \
-            http://localhost:8008
-          echo "✅ Matrix ${USER_TYPE} user created successfully: @${USERNAME}:${DOMAIN_NAME}"
-          ENDSSH
+          # Create Matrix user (pass variables via SSH)
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker exec matrix-synapse register_new_matrix_user \
+              -u \"${USERNAME}\" \
+              -p \"${PASSWORD}\" \
+              ${ADMIN_FLAG} \
+              -c /data/homeserver.yaml \
+              http://localhost:8008 && \
+            echo '✅ Matrix ${USER_TYPE} user created successfully: @${USERNAME}:${DOMAIN_NAME}'"
 
       - name: Create Jitsi User
         env:
@@ -118,13 +117,12 @@ jobs:
         run: |
           echo "🔧 Creating Jitsi user..."
           
-          # Create Jitsi user
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'ENDSSH'
-          docker exec jitsi-prosody prosodyctl \
-            --config /config/prosody.cfg.lua \
-            register "${USERNAME}" auth.meet.jitsi "${PASSWORD}"
-          echo "✅ Jitsi user created successfully: ${USERNAME}@auth.meet.jitsi"
-          ENDSSH
+          # Create Jitsi user (pass variables via SSH)
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker exec jitsi-prosody prosodyctl \
+              --config /config/prosody.cfg.lua \
+              register \"${USERNAME}\" auth.meet.jitsi \"${PASSWORD}\" && \
+            echo '✅ Jitsi user created successfully: ${USERNAME}@auth.meet.jitsi'"
 
       - name: Summary
         env:
