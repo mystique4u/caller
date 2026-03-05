@@ -34,6 +34,7 @@ jobs:
           fi
           
           # Validate password length
+          PASSWORD="${{ github.event.inputs.password }}"
           if [[ ${#PASSWORD} -lt 8 ]]; then
             echo "❌ Password must be at least 8 characters long."
             exit 1
