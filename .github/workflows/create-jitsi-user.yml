@@ -37,36 +37,22 @@ jobs:
           
           echo "✅ Input validation passed"
 
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
-
       - name: Create Jitsi User
         run: |
           echo "🔧 Creating Jitsi user: ${{ github.event.inputs.username }}"
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} << 'EOF'
-          set -e
           
-          USERNAME="${{ github.event.inputs.username }}"
-          PASSWORD="${{ github.event.inputs.password }}"
+          # Mask the password in logs
+          echo "::add-mask::${{ github.event.inputs.password }}"
           
-          # Additional server-side validation
-          if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9.-]+$ ]]; then
-            echo "❌ Server validation failed: Invalid username format"
-            exit 1
-          fi
+          # Export SSH key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
           
+          # Create user
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP }} << 'EOF'
           docker exec jitsi-prosody prosodyctl \
             --config /config/prosody.cfg.lua \
-            register "$USERNAME" auth.meet.jitsi "$PASSWORD"
-          
-          if [[ $? -eq 0 ]]; then
-            echo "✅ Jitsi user created successfully: $USERNAME@auth.meet.jitsi"
-          else
-            echo "❌ Failed to create Jitsi user"
-            exit 1
-          fi
+            register "${{ github.event.inputs.username }}" auth.meet.jitsi "${{ github.event.inputs.password }}"
+          echo "✅ Jitsi user created successfully: ${{ github.event.inputs.username }}@auth.meet.jitsi"
           EOF
