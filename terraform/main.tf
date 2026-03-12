@@ -62,6 +62,17 @@ resource "hcloud_firewall" "vpn_services" {
     ]
   }
 
+  # Matrix federation listener
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "8448"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
   rule {
     direction = "in"
     protocol  = "udp"
