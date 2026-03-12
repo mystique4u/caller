@@ -20,10 +20,16 @@
     matrix_synapse_image: "matrixdotorg/synapse:latest"
     matrix_postgres_image: "postgres:15-alpine"
     element_web_image: "vectorim/element-web:latest"
+    livekit_image: "livekit/livekit-server:latest"
+    lk_jwt_service_image: "ghcr.io/element-hq/lk-jwt-service:0.4.1"
+    coturn_image: "instrumentisto/coturn:4.6.2"
     matrix_admin_user: "{{ lookup('env', 'MATRIX_ADMIN_USER') | default('admin', true) }}"
     matrix_admin_password: "{{ lookup('env', 'MATRIX_ADMIN_PASSWORD') }}"
     matrix_registration_secret: "{{ lookup('env', 'MATRIX_REGISTRATION_SECRET') }}"
     postgres_password: "{{ lookup('env', 'MATRIX_POSTGRES_PASSWORD') }}"
+    livekit_api_key: "{{ lookup('env', 'LIVEKIT_API_KEY') }}"
+    livekit_api_secret: "{{ lookup('env', 'LIVEKIT_API_SECRET') }}"
+    turn_shared_secret: "{{ lookup('env', 'TURN_SHARED_SECRET') }}"
 
   tasks:
     - name: Wait for server to be ready
@@ -176,6 +182,10 @@
         - /opt/services/matrix/synapse
         - /opt/services/matrix/postgres
         - /opt/services/matrix/element
+        - /opt/services/matrix/livekit
+        - /opt/services/matrix/rtc
+        - /opt/services/matrix/turn
+        - /opt/services/well-known/matrix
 
     - name: Create Traefik static configuration with HTTPS
       copy:
@@ -218,6 +228,56 @@
           [log]
             level = "INFO"
         dest: /opt/services/traefik/traefik.toml
+        mode: '0644'
+
+    - name: Create LiveKit configuration
+      copy:
+        content: |
+          port: 7880
+          rtc:
+            tcp_port: 7881
+            udp_port: 7882
+            use_external_ip: true
+            external_ip: "{{ server_ip }}"
+          keys:
+            "{{ livekit_api_key }}": "{{ livekit_api_secret }}"
+          room:
+            auto_create: false
+        dest: /opt/services/matrix/livekit/livekit.yaml
+        mode: '0600'
+      when: livekit_api_key is defined and livekit_api_secret is defined
+
+    - name: Create TURN configuration
+      copy:
+        content: |
+          use-auth-secret
+          static-auth-secret={{ turn_shared_secret }}
+          realm={{ domain_name }}
+          listening-port=3478
+          min-port=49152
+          max-port=49200
+          external-ip={{ server_ip }}
+          listening-ip=0.0.0.0
+          fingerprint
+        dest: /opt/services/matrix/turn/turnserver.conf
+        mode: '0600'
+      when: turn_shared_secret is defined
+
+    - name: Create Matrix well-known configuration
+      copy:
+        content: |
+          {
+            "m.homeserver": {
+              "base_url": "https://matrix.{{ domain_name }}"
+            },
+            "org.matrix.msc4143.rtc_foci": [
+              {
+                "type": "livekit",
+                "livekit_service_url": "https://rtc.{{ domain_name }}/livekit/jwt"
+              }
+            ]
+          }
+        dest: /opt/services/well-known/matrix/client
         mode: '0644'
 
     - name: Create Docker Compose file with HTTPS
@@ -419,6 +479,73 @@
                 - "traefik.http.services.element.loadbalancer.server.scheme=http"
                 - "traefik.http.routers.element.tls.certresolver=letsencrypt"
 
+            well-known:
+              image: nginx:alpine
+              container_name: well-known
+              restart: unless-stopped
+              volumes:
+                - /opt/services/well-known:/usr/share/nginx/html/.well-known:ro
+              networks:
+                - services
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.wellknown.rule=Host(`{{ domain_name }}`) && PathPrefix(`/.well-known/`)"
+                - "traefik.http.routers.wellknown.entrypoints=websecure"
+                - "traefik.http.services.wellknown.loadbalancer.server.port=80"
+                - "traefik.http.routers.wellknown.tls.certresolver=letsencrypt"
+
+            livekit:
+              image: "{{ livekit_image }}"
+              container_name: livekit
+              restart: unless-stopped
+              command: ["--config", "/config/livekit.yaml"]
+              ports:
+                - "7880:7880"
+                - "7881:7881"
+                - "7882:7882/udp"
+              volumes:
+                - /opt/services/matrix/livekit/livekit.yaml:/config/livekit.yaml:ro
+              networks:
+                - services
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.livekit.rule=Host(`livekit.{{ domain_name }}`)"
+                - "traefik.http.routers.livekit.entrypoints=websecure"
+                - "traefik.http.services.livekit.loadbalancer.server.port=7880"
+                - "traefik.http.routers.livekit.tls.certresolver=letsencrypt"
+
+            matrix-rtc:
+              image: "{{ lk_jwt_service_image }}"
+              container_name: matrix-rtc
+              restart: unless-stopped
+              environment:
+                - LIVEKIT_URL=wss://livekit.{{ domain_name }}
+                - LIVEKIT_KEY={{ livekit_api_key }}
+                - LIVEKIT_SECRET={{ livekit_api_secret }}
+                - LIVEKIT_FULL_ACCESS_HOMESERVERS={{ domain_name }}
+              networks:
+                - services
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.matrixrtc.rule=Host(`rtc.{{ domain_name }}`) && PathPrefix(`/livekit/jwt`)"
+                - "traefik.http.routers.matrixrtc.entrypoints=websecure"
+                - "traefik.http.services.matrixrtc.loadbalancer.server.port=8080"
+                - "traefik.http.routers.matrixrtc.tls.certresolver=letsencrypt"
+
+            coturn:
+              image: "{{ coturn_image }}"
+              container_name: coturn
+              restart: unless-stopped
+              command: ["-c", "/etc/coturn/turnserver.conf", "-n"]
+              ports:
+                - "3478:3478"
+                - "3478:3478/udp"
+                - "49152-49200:49152-49200/udp"
+              volumes:
+                - /opt/services/matrix/turn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+              networks:
+                - services
+
           networks:
             services:
               name: services_network
@@ -545,7 +672,8 @@
               "feature_custom_tags": "labs",
               "feature_state_counters": "labs",
               "feature_voice_messages": "labs",
-              "feature_thread": "labs"
+              "feature_thread": "labs",
+              "feature_video_rooms": "labs"
             },
             "default_federate": true,
             "default_theme": "dark",

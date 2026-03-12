@@ -84,6 +84,66 @@ resource "hcloud_firewall" "vpn_services" {
 
   rule {
     direction = "in"
+    protocol  = "tcp"
+    port      = "7880"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "7881"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "udp"
+    port      = "7882"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "3478"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "udp"
+    port      = "3478"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "udp"
+    port      = "49152-49200"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
     protocol  = "icmp"
     source_ips = [
       "0.0.0.0/0",
@@ -183,6 +243,33 @@ resource "hcloud_zone_record" "element" {
   count = var.domain_name != "" ? 1 : 0
   zone  = data.hcloud_zone.domain[0].name
   name  = "chat"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
+}
+
+# DNS A Record for MatrixRTC auth service
+resource "hcloud_zone_record" "matrix_rtc" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "rtc"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
+}
+
+# DNS A Record for LiveKit SFU
+resource "hcloud_zone_record" "livekit" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "livekit"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
+}
+
+# DNS A Record for TURN server
+resource "hcloud_zone_record" "turn" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "turn"
   type  = "A"
   value = hcloud_server.vm.ipv4_address
 }

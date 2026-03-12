@@ -114,6 +114,9 @@ git push origin main
 | A           | `meet`   | Server IPv4         | Jitsi Meet       |
 | A           | `matrix` | Server IPv4         | Matrix Synapse   |
 | A           | `chat`   | Server IPv4         | Element Web      |
+| A           | `rtc`    | Server IPv4         | MatrixRTC Auth   |
+| A           | `livekit`| Server IPv4         | LiveKit SFU      |
+| A           | `turn`   | Server IPv4         | TURN server      |
 | AAAA        | `@`      | Server IPv6         | IPv6 support     |
 
 ### SSL Certificates (Automatic)
@@ -126,6 +129,9 @@ Let's Encrypt certificates for:
 - `meet.yourdomain.com`
 - `matrix.yourdomain.com`
 - `chat.yourdomain.com`
+- `rtc.yourdomain.com`
+- `livekit.yourdomain.com`
+- `turn.yourdomain.com`
 
 **Auto-renewal**: Traefik handles renewal before expiry (every 60 days)
 
@@ -141,6 +147,8 @@ After DNS propagation (typically 1-24 hours):
 | Jitsi Meet        | `https://meet.yourdomain.com`            | [Guide](../JITSI_GUIDE.md)     |
 | Matrix Synapse    | `https://matrix.yourdomain.com`          | [Guide](../MATRIX_GUIDE.md)    |
 | Element Web       | `https://chat.yourdomain.com`            | [Guide](../MATRIX_GUIDE.md)    |
+| MatrixRTC Auth    | `https://rtc.yourdomain.com/livekit/jwt` | MatrixRTC backend             |
+| LiveKit SFU       | `https://livekit.yourdomain.com`         | LiveKit backend               |
 | Traefik Dashboard | `https://yourdomain.com:8080/dashboard/` | Monitoring only              |
 
 **Note**: All credentials are configured via GitHub Secrets. See [GITHUB_SECRETS.md](GITHUB_SECRETS.md) for setup.

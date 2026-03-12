@@ -545,6 +545,9 @@ jobs:
           MATRIX_ADMIN_PASSWORD: ${{ secrets.MATRIX_ADMIN_PASSWORD }}
           MATRIX_REGISTRATION_SECRET: ${{ secrets.MATRIX_REGISTRATION_SECRET }}
           MATRIX_POSTGRES_PASSWORD: ${{ secrets.MATRIX_POSTGRES_PASSWORD }}
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+          TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
         run: |
           echo "🔐 Let's Encrypt Environment: ${LETSENCRYPT_ENV}"
           if [ "${LETSENCRYPT_ENV}" == "staging" ]; then
