@@ -255,7 +255,10 @@ resource "hcloud_zone_record" "matrix_federation" {
   zone  = data.hcloud_zone.domain[0].name
   name  = "_matrix._tcp"
   type  = "SRV"
-  data  = "0 0 8448 matrix.${var.domain_name}."
+  priority = 0
+  weight   = 0
+  port     = 8448
+  target   = "matrix.${var.domain_name}."
 }
 
 # DNS A Record for Element web client
