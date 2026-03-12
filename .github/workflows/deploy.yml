@@ -424,21 +424,12 @@ jobs:
           echo "🔧 Initializing Terraform..."
           terraform init
         
-      - name: Check for Plan Artifact
-        id: check_artifact
-        continue-on-error: true
-        run: |
-          echo "Checking if plan artifact exists from this workflow run..."
-          # This will be used to decide whether to download
-          echo "artifact_expected=true" >> $GITHUB_OUTPUT
-        
       - name: Download Plan
-        if: steps.check_artifact.outcome == 'success'
+        if: needs.plan.outputs.plan_exitcode == '2'
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan
           path: terraform/
-        continue-on-error: true
         id: download_plan
         
       - name: Terraform Apply
