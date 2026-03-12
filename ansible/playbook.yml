@@ -531,6 +531,8 @@
                 - "traefik.http.routers.matrixrtc.entrypoints=websecure"
                 - "traefik.http.services.matrixrtc.loadbalancer.server.port=8080"
                 - "traefik.http.routers.matrixrtc.tls.certresolver=letsencrypt"
+                - "traefik.http.middlewares.matrixrtc-stripprefix.stripprefix.prefixes=/livekit/jwt"
+                - "traefik.http.routers.matrixrtc.middlewares=matrixrtc-stripprefix"
 
             coturn:
               image: "{{ coturn_image }}"
