@@ -744,6 +744,22 @@ jobs:
           else
             echo "::warning::Element Web at https://chat.$domain is not responding yet (may not be deployed if secrets not configured)"
           fi
+
+          # Check Matrix well-known discovery
+          echo "Testing https://$domain/.well-known/matrix/client ..."
+          if curl -sSf -k --connect-timeout 10 "https://$domain/.well-known/matrix/client" > /dev/null 2>&1; then
+            echo "✅ Matrix well-known discovery is accessible"
+          else
+            echo "::warning::Matrix well-known discovery is not responding yet"
+          fi
+
+          # Check MatrixRTC auth service
+          echo "Testing https://rtc.$domain/livekit/jwt/healthz ..."
+          if curl -sSf -k --connect-timeout 10 "https://rtc.$domain/livekit/jwt/healthz" > /dev/null 2>&1; then
+            echo "✅ MatrixRTC auth service is accessible"
+          else
+            echo "::warning::MatrixRTC auth service is not responding yet (may not be deployed if secrets not configured)"
+          fi
           
           # Check Traefik dashboard
           echo "Testing Traefik dashboard..."
@@ -782,6 +798,8 @@ jobs:
           echo "- **Jitsi Meet:** https://meet.$domain" >> $GITHUB_STEP_SUMMARY
           echo "- **Matrix Synapse:** https://matrix.$domain" >> $GITHUB_STEP_SUMMARY
           echo "- **Element Web:** https://chat.$domain" >> $GITHUB_STEP_SUMMARY
+          echo "- **MatrixRTC Well-Known:** https://$domain/.well-known/matrix/client" >> $GITHUB_STEP_SUMMARY
+          echo "- **MatrixRTC Auth:** https://rtc.$domain/livekit/jwt/healthz" >> $GITHUB_STEP_SUMMARY
           echo "- **Traefik Dashboard:** http://$ip:8080/dashboard/" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### ⚠️ Important Notes" >> $GITHUB_STEP_SUMMARY
@@ -799,6 +817,8 @@ jobs:
           echo "  📹 Jitsi Meet: https://meet.${{ secrets.DOMAIN_NAME }}"
           echo "  💬 Matrix Synapse: https://matrix.${{ secrets.DOMAIN_NAME }}"
           echo "  🗨️  Element Web: https://chat.${{ secrets.DOMAIN_NAME }}"
+          echo "  🔎 Matrix Well-Known: https://${{ secrets.DOMAIN_NAME }}/.well-known/matrix/client"
+          echo "  🎥 MatrixRTC Auth: https://rtc.${{ secrets.DOMAIN_NAME }}/livekit/jwt/healthz"
           echo "  📊 Traefik Dashboard: https://${{ secrets.DOMAIN_NAME }}:8080/dashboard/"
           echo ""
           echo "⚠️  DNS Configuration Required:"
