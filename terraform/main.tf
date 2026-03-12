@@ -249,6 +249,16 @@ resource "hcloud_zone_record" "matrix" {
   value = hcloud_server.vm.ipv4_address
 }
 
+# DNS SRV record for Matrix federation
+resource "hcloud_zone_record" "matrix_federation" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "_matrix._tcp"
+  type  = "SRV"
+  ttl   = 3600
+  data  = "0 0 8448 matrix.${var.domain_name}."
+}
+
 # DNS A Record for Element web client
 resource "hcloud_zone_record" "element" {
   count = var.domain_name != "" ? 1 : 0
