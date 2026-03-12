@@ -489,7 +489,7 @@
                 - services
               labels:
                 - "traefik.enable=true"
-                - "traefik.http.routers.wellknown.rule=Host(`{{ domain_name }}`) && PathPrefix(`/.well-known/`)"
+                - "traefik.http.routers.wellknown.rule=(Host(`{{ domain_name }}`) || Host(`matrix.{{ domain_name }}`)) && PathPrefix(`/.well-known/`)"
                 - "traefik.http.routers.wellknown.entrypoints=websecure"
                 - "traefik.http.services.wellknown.loadbalancer.server.port=80"
                 - "traefik.http.routers.wellknown.tls.certresolver=letsencrypt"
