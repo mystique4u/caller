@@ -66,6 +66,9 @@ Configure these secrets in GitHub at:
 - `meet.yourdomain.com` - Jitsi Meet
 - `matrix.yourdomain.com` - Matrix Synapse
 - `chat.yourdomain.com` - Element Web
+- `rtc.yourdomain.com` - MatrixRTC Auth
+- `livekit.yourdomain.com` - LiveKit SFU
+- `turn.yourdomain.com` - TURN server
 - `yourdomain.com:8080/dashboard/` - Traefik
 
 ---
@@ -216,6 +219,48 @@ openssl rand -base64 32
 
 ```bash
 openssl rand -base64 24
+```
+
+---
+
+### 14. LIVEKIT_API_KEY
+
+**Purpose**: LiveKit API key for MatrixRTC
+
+**Value format**: Random string (minimum 16 characters)
+
+**How to generate**:
+
+```bash
+openssl rand -hex 16
+```
+
+---
+
+### 15. LIVEKIT_API_SECRET
+
+**Purpose**: LiveKit API secret for MatrixRTC
+
+**Value format**: Random string (minimum 32 characters)
+
+**How to generate**:
+
+```bash
+openssl rand -hex 32
+```
+
+---
+
+### 16. TURN_SHARED_SECRET
+
+**Purpose**: Shared secret for TURN authentication (coturn)
+
+**Value format**: Random string (minimum 32 characters)
+
+**How to generate**:
+
+```bash
+openssl rand -hex 32
 ```
 
 **Example**: `DbSecure789XyZ!@#$`
