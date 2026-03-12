@@ -28,6 +28,7 @@ on:
         type: boolean
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   TERRAFORM_VERSION: '1.6.0'
   # Terraform Cloud authentication (for state storage only)
   TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
@@ -197,7 +198,7 @@ jobs:
           
           # Check for exposed database ports
           for port in 3306 5432 27017 6379 9200; do
-            if grep -B5 -A5 "port.*$port" main.tf | grep "0.0.0.0/0" | grep -v "#" > /dev/null 2>&1; then
+            if grep -B5 -A5 -E "port[[:space:]]*= \"${port}\"" main.tf | grep "0.0.0.0/0" | grep -v "#" > /dev/null 2>&1; then
               echo "::error::Database port $port is exposed to the internet!"
             fi
           done
