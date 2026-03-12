@@ -22,7 +22,7 @@
     element_web_image: "vectorim/element-web:latest"
     livekit_image: "livekit/livekit-server:latest"
     lk_jwt_service_image: "ghcr.io/element-hq/lk-jwt-service:0.4.1"
-    coturn_image: "instrumentisto/coturn:4.6.2"
+    coturn_image: "coturn/coturn:4.6.2"
     matrix_admin_user: "{{ lookup('env', 'MATRIX_ADMIN_USER') | default('admin', true) }}"
     matrix_admin_password: "{{ lookup('env', 'MATRIX_ADMIN_PASSWORD') }}"
     matrix_registration_secret: "{{ lookup('env', 'MATRIX_REGISTRATION_SECRET') }}"
