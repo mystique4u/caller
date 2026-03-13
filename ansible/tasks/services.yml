@@ -19,12 +19,17 @@
   register: docker_result
   until: docker_result.rc == 0
 
+- name: Wait for Docker containers to initialize
+  pause:
+    seconds: 30
+    prompt: "Waiting for containers to start..."
+
 - name: Wait for services to be ready
   wait_for:
     port: "{{ item }}"
     host: 127.0.0.1
-    timeout: 60
-    delay: 5
+    timeout: 120
+    delay: 10
   loop:
     - 80
     - 443
@@ -37,8 +42,8 @@
     status_code: 200
   register: result
   until: result.status == 200
-  retries: 12
-  delay: 5
+  retries: 20
+  delay: 10
   ignore_errors: yes
 
 - name: Check Matrix Synapse health
@@ -48,8 +53,8 @@
     status_code: 200
   register: synapse_health
   until: synapse_health.status == 200
-  retries: 12
-  delay: 5
+  retries: 30
+  delay: 10
   ignore_errors: yes
   
 - name: Display Synapse health status
