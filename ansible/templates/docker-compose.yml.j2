@@ -1,0 +1,276 @@
+services:
+  traefik:
+    image: traefik:v2.11
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+      - "8448:8448"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /opt/services/traefik/traefik.toml:/etc/traefik/traefik.toml:ro
+      - /opt/services/traefik/dynamic:/etc/traefik/dynamic:ro
+      - /opt/services/traefik/acme:/acme
+    networks:
+      - services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`{{ domain_name }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+
+  wireguard-ui:
+    image: ngoduykhanh/wireguard-ui:{{ wireguard_ui_version }}
+    container_name: wireguard-ui
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    privileged: true
+    environment:
+      - WGUI_USERNAME=admin
+      - WGUI_PASSWORD=admin
+      - WGUI_SESSION_SECRET=supersecretkey123456789012345678901234567890
+      - WGUI_ENDPOINT_ADDRESS=vpn.{{ domain_name }}
+      - WGUI_DNS=1.1.1.1,1.0.0.1
+      - WGUI_MTU=1420
+      - WGUI_PERSISTENT_KEEPALIVE=25
+      - WGUI_SERVER_INTERFACE_ADDRESSES=10.0.0.1/24
+      - WGUI_SERVER_LISTEN_PORT={{ wireguard_port }}
+      - WGUI_SERVER_POST_UP_SCRIPT=iptables -I DOCKER-USER -i wg0 -j ACCEPT; iptables -I DOCKER-USER -o wg0 -j ACCEPT; iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      - WGUI_SERVER_POST_DOWN_SCRIPT=iptables -D DOCKER-USER -i wg0 -j ACCEPT; iptables -D DOCKER-USER -o wg0 -j ACCEPT; iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+    volumes:
+      - /opt/services/wireguard-ui:/app/db
+      - /etc/wireguard:/etc/wireguard
+    networks:
+      - services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wireguard.rule=Host(`vpn.{{ domain_name }}`)"
+      - "traefik.http.routers.wireguard.entrypoints=websecure"
+      - "traefik.http.services.wireguard.loadbalancer.server.port=5000"
+      - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
+
+  jitsi-web:
+    image: "{{ jitsi_web_image }}"
+    container_name: jitsi-web
+    restart: unless-stopped
+    environment:
+      - ENABLE_AUTH=1
+      - ENABLE_GUESTS=0
+      - AUTH_TYPE=internal
+      - PUBLIC_URL=https://meet.{{ domain_name }}
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_BOSH_URL_BASE=http://jitsi-prosody:5280
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - JVB_TCP_HARVESTER_DISABLED=true
+    networks:
+      - services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jitsi.rule=Host(`meet.{{ domain_name }}`)"
+      - "traefik.http.routers.jitsi.entrypoints=websecure"
+      - "traefik.http.services. "jitsi.loadbalancer.server.port=80"
+      - "traefik.http.services.jitsi.loadbalancer.server.scheme=http"
+      - "traefik.http.routers.jitsi.tls.certresolver=letsencrypt"
+
+  jitsi-prosody:
+    image: "{{ jitsi_prosody_image }}"
+    container_name: jitsi-prosody
+    restart: unless-stopped
+    environment:
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - JICOFO_COMPONENT_SECRET=jicofo_secret
+      - JICOFO_AUTH_PASSWORD=focus_password
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=jvb_password
+      - ENABLE_AUTH=1
+      - ENABLE_GUESTS=0
+      - AUTH_TYPE=internal
+    volumes:
+      - /opt/services/jitsi/prosody/config:/config
+      - /opt/services/jitsi/prosody/prosody-plugins-custom:/prosody-plugins-custom
+    networks:
+      - services
+
+  jitsi-jicofo:
+    image: "{{ jitsi_jicofo_image }}"
+    container_name: jitsi-jicofo
+    restart: unless-stopped
+    environment:
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - JICOFO_COMPONENT_SECRET=jicofo_secret
+      - JICOFO_AUTH_USER=focus
+      - JICOFO_AUTH_PASSWORD=focus_password
+    networks:
+      - services
+
+  jitsi-jvb:
+    image: "{{ jitsi_jvb_image }}"
+    container_name: jitsi-jvb
+    restart: unless-stopped
+    ports:
+      - "10000:10000/udp"
+    environment:
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=jvb_password
+      - JVB_STUN_SERVERS=meet-jit-si-turnrelay.jitsi.net:443
+      - JVB_PORT=10000
+      - PUBLIC_URL=https://meet.{{ domain_name }}
+    networks:
+      - services
+
+  matrix-postgres:
+    image: "{{ matrix_postgres_image }}"
+    container_name: matrix-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=synapse
+      - POSTGRES_USER=synapse
+      - POSTGRES_PASSWORD={{ postgres_password }}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - /opt/services/matrix/postgres:/var/lib/postgresql/data
+    networks:
+      - services
+
+  matrix-synapse:
+    image: "{{ matrix_synapse_image }}"
+    container_name: matrix-synapse
+    restart: unless-stopped
+    environment:
+      - SYNAPSE_SERVER_NAME={{ domain_name }}
+      - SYNAPSE_REPORT_STATS=no
+      - SYNAPSE_ENABLE_REGISTRATION=no
+      - SYNAPSE_REGISTRATION_SHARED_SECRET={{ matrix_registration_secret }}
+      - POSTGRES_HOST=matrix-postgres
+      - POSTGRES_USER=synapse
+      - POSTGRES_PASSWORD={{ postgres_password }}
+      - POSTGRES_DB=synapse
+    volumes:
+      - /opt/services/matrix/synapse:/data
+    networks:
+      - services
+    labels:
+      - "traefik.enable=true"
+      # Client API (port 8008)
+      - "traefik.http.routers.matrix.rule=Host(`matrix.{{ domain_name }}`)"
+      - "traefik.http.routers.matrix.entrypoints=websecure"
+      - "traefik.http.services.matrix.loadbalancer.server.port=8008"
+      - "traefik.http.services.matrix.loadbalancer.server.scheme=http"
+      - "traefik.http.routers.matrix.tls.certresolver=letsencrypt"
+      # Federation API (port 8448)
+      - "traefik.http.routers.matrix-federation.rule=Host(`matrix.{{ domain_name }}`)"
+      - "traefik.http.routers.matrix-federation.entrypoints=federation"
+      - "traefik.http.services.matrix-federation.loadbalancer.server.port=8008"
+      - "traefik.http.routers.matrix-federation.tls.certresolver=letsencrypt"
+      - "traefik.http.middlewares.upload-limit.buffering.maxRequestBodyBytes=1073741824"
+      - "traefik.http.routers.matrix.middlewares=upload-limit"
+    depends_on:
+      - matrix-postgres
+
+  element-web:
+    image: "{{ element_web_image }}"
+    container_name: element-web
+    restart: unless-stopped
+    volumes:
+      - /opt/services/matrix/element/config.json:/app/config.json:ro
+    networks:
+      - services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.element.rule=Host(`chat.{{ domain_name }}`)"
+      - "traefik.http.routers.element.entrypoints=websecure"
+      - "traefik.http.services.element.loadbalancer.server.port=80"
+      - "traefik.http.services.element.loadbalancer.server.scheme=http"
+      - "traefik.http.routers.element.tls.certresolver=letsencrypt"
+
+  well-known:
+    image: nginx:alpine
+    container_name: well-known
+    restart: unless-stopped
+    volumes:
+      - /opt/services/well-known:/usr/share/nginx/html/.well-known:ro
+    networks:
+      - services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wellknown.rule=(Host(`{{ domain_name }}`) || Host(`matrix.{{ domain_name }}`)) && PathPrefix(`/.well-known/`)"
+      - "traefik.http.routers.wellknown.entrypoints=websecure"
+      - "traefik.http.services.wellknown.loadbalancer.server.port=80"
+      - "traefik.http.routers.wellknown.tls.certresolver=letsencrypt"
+
+  livekit:
+    image: "{{ livekit_image }}"
+    container_name: livekit
+    restart: unless-stopped
+    command: ["--config", "/config/livekit.yaml"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - /opt/services/matrix/livekit/livekit.yaml:/config/livekit.yaml:ro
+    networks:
+      - services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.livekit.rule=Host(`livekit.{{ domain_name }}`)"
+      - "traefik.http.routers.livekit.entrypoints=websecure"
+      - "traefik.http.services.livekit.loadbalancer.server.port=7880"
+      - "traefik.http.routers.livekit.tls.certresolver=letsencrypt"
+
+  matrix-rtc:
+    image: "{{ lk_jwt_service_image }}"
+    container_name: matrix-rtc
+    restart: unless-stopped
+    environment:
+      - LIVEKIT_URL=wss://livekit.{{ domain_name }}
+      - LIVEKIT_KEY={{ livekit_api_key }}
+      - LIVEKIT_SECRET={{ livekit_api_secret }}
+      - LIVEKIT_FULL_ACCESS_HOMESERVERS={{ domain_name }}
+    networks:
+      - services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.matrixrtc.rule=Host(`rtc.{{ domain_name }}`) && PathPrefix(`/livekit/jwt`)"
+      - "traefik.http.routers.matrixrtc.entrypoints=websecure"
+      - "traefik.http.services.matrixrtc.loadbalancer.server.port=8080"
+      - "traefik.http.routers.matrixrtc.tls.certresolver=letsencrypt"
+      - "traefik.http.middlewares.matrixrtc-stripprefix.stripprefix.prefixes=/livekit/jwt"
+      - "traefik.http.routers.matrixrtc.middlewares=matrixrtc-stripprefix"
+
+  coturn:
+    image: "{{ coturn_image }}"
+    container_name: coturn
+    restart: unless-stopped
+    command: ["-c", "/etc/coturn/turnserver.conf", "-n"]
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49152-49200:49152-49200/udp"
+    volumes:
+      - /opt/services/matrix/turn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    networks:
+      - services
+
+networks:
+  services:
+    name: services_network
+    driver: bridge

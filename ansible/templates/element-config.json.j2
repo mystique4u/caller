@@ -1,0 +1,52 @@
+{
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "https://matrix.{{ domain_name }}",
+      "server_name": "{{ domain_name }}"
+    }
+  },
+  "brand": "Element",
+  "integrations_ui_url": "https://scalar.vector.im/",
+  "integrations_rest_url": "https://scalar.vector.im/api",
+  "integrations_widgets_urls": [
+    "https://scalar.vector.im/_matrix/integrations/v1",
+    "https://scalar.vector.im/api",
+    "https://scalar-staging.vector.im/_matrix/integrations/v1",
+    "https://scalar-staging.vector.im/api",
+    "https://scalar-staging.riot.im/scalar/api"
+  ],
+  "element_call": {
+    "url": "https://call.element.io",
+    "use_exclusively": false,
+    "participant_limit": 8,
+    "brand": "Element Call"
+  },
+  "jitsi": {
+    "preferredDomain": "meet.{{ domain_name }}"
+  },
+  "bug_report_endpoint_url": "https://element.io/bugreports/submit",
+  "defaultCountryCode": "GB",
+  "showLabsSettings": true,
+  "features": {
+    "feature_pinning": "labs",
+    "feature_custom_status": "labs",
+    "feature_custom_tags": "labs",
+    "feature_state_counters": "labs",
+    "feature_voice_messages": "labs",
+    "feature_thread": "labs",
+    "feature_video_rooms": "labs",
+    "feature_element_call_video_rooms": true,
+    "feature_group_calls": true
+  },
+  "default_federate": true,
+  "default_theme": "dark",
+  "roomDirectory": {
+    "servers": ["{{ domain_name }}"]
+  },
+  "enable_presence_by_hs_url": {
+    "https://matrix.{{ domain_name }}": true
+  },
+  "settingDefaults": {
+    "breadcrumbs": true
+  }
+}
