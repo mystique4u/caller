@@ -208,6 +208,9 @@
             [entryPoints.websecure]
               address = ":443"
 
+            [entryPoints.federation]
+              address = ":8448"
+
             [entryPoints.traefik]
               address = ":8080"
 
@@ -263,14 +266,14 @@
         mode: '0600'
       when: turn_shared_secret is defined
 
-    - name: Create Matrix well-known configuration
+    - name: Create Matrix well-known client configuration
       copy:
         content: |
           {
             "m.homeserver": {
               "base_url": "https://matrix.{{ domain_name }}"
             },
-            "org.matrix.msc4143.rtc_foci": [
+            "m.rtc_foci": [
               {
                 "type": "livekit",
                 "livekit_service_url": "https://rtc.{{ domain_name }}/livekit/jwt"
@@ -278,6 +281,15 @@
             ]
           }
         dest: /opt/services/well-known/matrix/client
+        mode: '0644'
+
+    - name: Create Matrix well-known server configuration for federation
+      copy:
+        content: |
+          {
+            "m.server": "matrix.{{ domain_name }}:443"
+          }
+        dest: /opt/services/well-known/matrix/server
         mode: '0644'
 
     - name: Create Docker Compose file with HTTPS
@@ -292,6 +304,7 @@
                 - "80:80"
                 - "443:443"
                 - "8080:8080"
+                - "8448:8448"
               volumes:
                 - /var/run/docker.sock:/var/run/docker.sock:ro
                 - /opt/services/traefik/traefik.toml:/etc/traefik/traefik.toml:ro
@@ -453,11 +466,17 @@
                 - services
               labels:
                 - "traefik.enable=true"
+                # Client API (port 8008)
                 - "traefik.http.routers.matrix.rule=Host(`matrix.{{ domain_name }}`)"
                 - "traefik.http.routers.matrix.entrypoints=websecure"
                 - "traefik.http.services.matrix.loadbalancer.server.port=8008"
                 - "traefik.http.services.matrix.loadbalancer.server.scheme=http"
                 - "traefik.http.routers.matrix.tls.certresolver=letsencrypt"
+                # Federation API (port 8448)
+                - "traefik.http.routers.matrix-federation.rule=Host(`matrix.{{ domain_name }}`)"
+                - "traefik.http.routers.matrix-federation.entrypoints=federation"
+                - "traefik.http.services.matrix-federation.loadbalancer.server.port=8008"
+                - "traefik.http.routers.matrix-federation.tls.certresolver=letsencrypt"
                 - "traefik.http.middlewares.upload-limit.buffering.maxRequestBodyBytes=1073741824"
                 - "traefik.http.routers.matrix.middlewares=upload-limit"
               depends_on:
@@ -642,6 +661,34 @@
         line: 'max_upload_size: 1073741824'
         backup: yes
 
+    - name: Set public_baseurl for federation
+      lineinfile:
+        path: /opt/services/matrix/synapse/homeserver.yaml
+        regexp: '^public_baseurl:'
+        line: 'public_baseurl: https://matrix.{{ domain_name }}'
+        backup: yes
+
+    - name: Configure trusted key servers for federation
+      lineinfile:
+        path: /opt/services/matrix/synapse/homeserver.yaml
+        regexp: '^trusted_key_servers:'
+        line: |
+          trusted_key_servers:
+            - server_name: "matrix.org"
+        backup: yes
+
+    - name: Enable experimental features for Element Call
+      blockinfile:
+        path: /opt/services/matrix/synapse/homeserver.yaml
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - Experimental Features"
+        block: |
+          experimental_features:
+            msc3026_enabled: true
+            msc3266_enabled: true
+            msc3401_enabled: true
+            msc3886_enabled: true
+        backup: yes
+
     - name: Create Element Web configuration
       copy:
         content: |
@@ -662,6 +709,12 @@
               "https://scalar-staging.vector.im/api",
               "https://scalar-staging.riot.im/scalar/api"
             ],
+            "element_call": {
+              "url": "https://call.element.io",
+              "use_exclusively": false,
+              "participant_limit": 8,
+              "brand": "Element Call"
+            },
             "jitsi": {
               "preferredDomain": "meet.{{ domain_name }}"
             },
@@ -675,7 +728,9 @@
               "feature_state_counters": "labs",
               "feature_voice_messages": "labs",
               "feature_thread": "labs",
-              "feature_video_rooms": "labs"
+              "feature_video_rooms": "labs",
+              "feature_element_call_video_rooms": true,
+              "feature_group_calls": true
             },
             "default_federate": true,
             "default_theme": "dark",
