@@ -32,7 +32,7 @@
 
 - name: Wait for Traefik to be healthy
   uri:
-    url: "http://127.0.0.1:8080/api/http/routers"
+    url: "http://127.0.0.1:8080/ping"
     method: GET
     status_code: 200
   register: result
