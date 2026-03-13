@@ -1,0 +1,69 @@
+---
+# Refactored playbook - organized into modular task files
+- name: Setup VPN and Services Server
+  hosts: all
+  become: yes
+  gather_facts: yes
+  environment:
+    ANSIBLE_REMOTE_TEMP: /tmp/.ansible/tmp
+
+  vars:
+    server_ip: "{{ ansible_host }}"
+    domain_name: "{{ lookup('env', 'DOMAIN_NAME') }}"
+    email_address: "{{ lookup('env', 'EMAIL_ADDRESS') }}"
+    letsencrypt_env: "{{ lookup('env', 'LETSENCRYPT_ENV') | default('production', true) }}"
+    wireguard_port: 51820
+    wireguard_ui_version: "0.6.2"
+    jitsi_web_image: "jitsi/web:stable"
+    jitsi_prosody_image: "jitsi/prosody:stable"
+    jitsi_jicofo_image: "jitsi/jicofo:stable"
+    jitsi_jvb_image: "jitsi/jvb:stable"
+    jitsi_admin_user: "{{ lookup('env', 'JITSI_ADMIN_USER') | default('admin', true) }}"
+    jitsi_admin_password: "{{ lookup('env', 'JITSI_ADMIN_PASSWORD') }}"
+    matrix_synapse_image: "matrixdotorg/synapse:latest"
+    matrix_postgres_image: "postgres:15-alpine"
+    element_web_image: "vectorim/element-web:latest"
+    livekit_image: "livekit/livekit-server:latest"
+    lk_jwt_service_image: "ghcr.io/element-hq/lk-jwt-service:0.4.1"
+    coturn_image: "coturn/coturn:4.6.2"
+    matrix_admin_user: "{{ lookup('env', 'MATRIX_ADMIN_USER') | default('admin', true) }}"
+    matrix_admin_password: "{{ lookup('env', 'MATRIX_ADMIN_PASSWORD') }}"
+    matrix_registration_secret: "{{ lookup('env', 'MATRIX_REGISTRATION_SECRET') }}"
+    postgres_password: "{{ lookup('env', 'MATRIX_POSTGRES_PASSWORD') }}"
+    livekit_api_key: "{{ lookup('env', 'LIVEKIT_API_KEY') }}"
+    livekit_api_secret: "{{ lookup('env', 'LIVEKIT_API_SECRET') }}"
+    turn_shared_secret: "{{ lookup('env', 'TURN_SHARED_SECRET') }}"
+
+  tasks:
+    - name: System setup and Docker installation
+      include_tasks: tasks/system-setup.yml
+      tags: ['system', 'docker']
+
+    - name: WireGuard configuration
+      include_tasks: tasks/wireguard.yml
+      tags: ['wireguard', 'vpn']
+
+    - name: Create service directories
+      include_tasks: tasks/directories.yml
+      tags: ['directories']
+
+    - name: Configure Traefik
+      include_tasks: tasks/traefik.yml
+      tags: ['traefik', 'proxy']
+
+    - name: Configure service-specific files
+      include_tasks: tasks/service-configs.yml
+      tags: ['config', 'livekit', 'turn']
+
+    - name: Configure Matrix Synapse
+      include_tasks: tasks/matrix.yml
+      tags: ['matrix', 'synapse']
+
+    - name: Deploy and manage services
+      include_tasks: tasks/services.yml
+      tags: ['services', 'docker-compose']
+
+    - name: Configure backups
+      include_tasks: tasks/backup.yml
+      tags: ['backup']
+      when: lookup('env', 'STORAGEBOX_HOST') != ''

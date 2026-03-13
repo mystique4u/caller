@@ -1,0 +1,40 @@
+[global]
+  checkNewVersion = false
+  sendAnonymousUsage = false
+
+[api]
+  dashboard = true
+  insecure = false
+
+[entryPoints]
+  [entryPoints.web]
+    address = ":80"
+    [entryPoints.web.http.redirections.entryPoint]
+      to = "websecure"
+      scheme = "https"
+
+  [entryPoints.websecure]
+    address = ":443"
+
+  [entryPoints.federation]
+    address = ":8448"
+
+  [entryPoints.traefik]
+    address = ":8080"
+
+[certificatesResolvers.letsencrypt.acme]
+  email = "{{ email_address }}"
+  storage = "/acme/acme.json"
+  {% if letsencrypt_env == 'staging' %}
+  caServer = "https://acme-staging-v02.api.letsencrypt.org/directory"
+  {% endif %}
+  [certificatesResolvers.letsencrypt.acme.httpChallenge]
+    entryPoint = "web"
+
+[providers]
+  [providers.docker]
+    endpoint = "unix:///var/run/docker.sock"
+    exposedByDefault = false
+
+[log]
+  level = "INFO"

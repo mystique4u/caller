@@ -1,0 +1,38 @@
+---
+# Directory Creation Tasks
+- name: Create docker compose directory
+  file:
+    path: /opt/services
+    state: directory
+    mode: '0755'
+
+- name: Create service directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/services/wireguard-ui
+    - /opt/services/traefik/dynamic
+    - /opt/services/traefik/acme
+    - /opt/services/jitsi/prosody/config
+    - /opt/services/jitsi/prosody/prosody-plugins-custom
+    - /opt/services/matrix/synapse
+    - /opt/services/matrix/postgres
+    - /opt/services/matrix/element
+    - /opt/services/matrix/livekit
+    - /opt/services/matrix/rtc
+    - /opt/services/matrix/turn
+    - /opt/services/well-known/matrix
+
+- name: Create backup script directory
+  file:
+    path: /opt/backup
+    state: directory
+    mode: '0700'
+
+- name: Create backup log file
+  file:
+    path: /var/log/backup.log
+    state: touch
+    mode: '0644'
