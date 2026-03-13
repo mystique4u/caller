@@ -42,22 +42,22 @@
     sleep 5
     docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register {{ jitsi_admin_user }} auth.meet.jitsi {{ jitsi_admin_password }}
   register: create_user_result
-  until: create_user_result.rc == 0 or 'already registered' in create_user_result.stderr
+  until: create_user_result.rc == 0 or 'already registered' in (create_user_result.stdout + create_user_result.stderr)
   retries: 3
   delay: 10
   failed_when: false
-  changed_when: "'already registered' not in create_user_result.stderr"
+  changed_when: "'already registered' not in (create_user_result.stdout + create_user_result.stderr)"
   when: jitsi_admin_user is defined and jitsi_admin_password is defined
 
 - name: Create Matrix admin user
   shell: |
     docker exec matrix-synapse register_new_matrix_user -u {{ matrix_admin_user }} -p {{ matrix_admin_password }} --admin -c /data/homeserver.yaml http://localhost:8008
   register: matrix_user_result
-  until: matrix_user_result.rc == 0 or 'User ID already taken' in matrix_user_result.stderr
+  until: matrix_user_result.rc == 0 or 'User ID already taken' in matrix_user_result.stdout
   retries: 3
   delay: 10
   failed_when: false
-  changed_when: "'User ID already taken' not in matrix_user_result.stderr and matrix_user_result.rc == 0"
+  changed_when: "'User ID already taken' not in matrix_user_result.stdout and matrix_user_result.rc == 0"
   when: matrix_admin_user is defined and matrix_admin_password is defined
 
 - name: Copy health check script to server
