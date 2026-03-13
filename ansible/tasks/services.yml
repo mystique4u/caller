@@ -19,105 +19,64 @@
   register: docker_result
   until: docker_result.rc == 0
 
-- name: Wait for Docker containers to initialize
-  pause:
-    seconds: 30
-    prompt: "Waiting for containers to start..."
-
-- name: Wait for services to be ready
-  wait_for:
-    port: "{{ item }}"
-    host: 127.0.0.1
-    timeout: 120
-    delay: 10
-  loop:
-    - 80
-    - 443
-  ignore_errors: yes
-
-- name: Wait for Traefik to be healthy
-  uri:
-    url: "http://127.0.0.1:8080/ping"
-    method: GET
-    status_code: 200
-  register: result
-  until: result.status == 200
-  retries: 20
-  delay: 10
-  ignore_errors: yes
-
-- name: Check Matrix Synapse health
-  uri:
-    url: "http://127.0.0.1:8008/health"
-    method: GET
-    status_code: 200
-  register: synapse_health
-  until: synapse_health.status == 200
-  retries: 30
-  delay: 10
-  ignore_errors: yes
-  
-- name: Display Synapse health status
-  debug:
-    msg: "Matrix Synapse health: {{ 'OK' if synapse_health.status == 200 else 'FAILED' }}"
-
-- name: Wait for Jitsi Prosody to be ready
-  wait_for:
-    timeout: 30
-  delegate_to: localhost
-
-- name: Fix Jitsi authdomain in config.js
-  shell: |
-    docker exec jitsi-web sed -i "s/config.hosts.authdomain = 'meet.jitsi';/config.hosts.authdomain = 'auth.meet.jitsi';/g" /config/config.js
-    docker exec jitsi-web nginx -s reload
-  register: fix_config_result
+- name: Verify Docker containers are running
+  shell: docker ps --filter "status=running" --format "{{{{.Names}}}}" | grep -E "traefik|matrix|element" | wc -l
+  register: running_containers
+  changed_when: false
   failed_when: false
-  changed_when: true
+
+- name: Display deployment status
+  debug:
+    msg:
+      - "Docker Compose deployment completed"
+      - "Running containers: {{ running_containers.stdout }}"
+      - ""
+      - "⚠️  Services may take 3-5 minutes to fully initialize"
+      - "Run health checks after deployment: ssh root@server './health-check.sh'"
+      - "Or use: scripts/health-check.sh (remotely)"
 
 - name: Create Jitsi admin user
   shell: |
+    docker exec jitsi-web sed -i "s/config.hosts.authdomain = 'meet.jitsi';/config.hosts.authdomain = 'auth.meet.jitsi';/g" /config/config.js 2>/dev/null || true
+    docker exec jitsi-web nginx -s reload 2>/dev/null || true
+    sleep 5
     docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register {{ jitsi_admin_user }} auth.meet.jitsi {{ jitsi_admin_password }}
   register: create_user_result
+  until: create_user_result.rc == 0 or 'already registered' in create_user_result.stderr
+  retries: 3
+  delay: 10
   failed_when: false
   changed_when: "'already registered' not in create_user_result.stderr"
   when: jitsi_admin_user is defined and jitsi_admin_password is defined
-
-- name: Wait for Matrix Synapse to be ready
-  wait_for:
-    timeout: 30
-  delegate_to: localhost
-  when: matrix_admin_user is defined and matrix_admin_password is defined
 
 - name: Create Matrix admin user
   shell: |
     docker exec matrix-synapse register_new_matrix_user -u {{ matrix_admin_user }} -p {{ matrix_admin_password }} --admin -c /data/homeserver.yaml http://localhost:8008
   register: matrix_user_result
+  until: matrix_user_result.rc == 0 or 'User ID already taken' in matrix_user_result.stderr
+  retries: 3
+  delay: 10
   failed_when: false
   changed_when: "'User ID already taken' not in matrix_user_result.stderr and matrix_user_result.rc == 0"
   when: matrix_admin_user is defined and matrix_admin_password is defined
 
-- name: Run post-deployment health checks
+- name: Copy health check script to server
+  copy:
+    src: "{{ playbook_dir }}/../scripts/health-check.sh"
+    dest: /opt/services/health-check.sh
+    mode: '0755'
+
+- name: Quick deployment status check
   shell: |
-    echo "=== Service Health Check ==="
-    echo "Checking Docker containers..."
-    docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "traefik|matrix|element|livekit"
-    
+    echo "=== Quick Deployment Status ==="
+    echo "Containers running:"
+    docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "traefik|matrix|element|livekit|jitsi"
     echo ""
-    echo "Checking Matrix Synapse health..."
-    curl -s http://localhost:8008/health || echo "Synapse health check failed"
-    
+    echo "Configuration files:"
+    test -f /opt/services/well-known/matrix/client && echo "✓ .well-known/matrix/client" || echo "✗ Missing"
+    test -f /opt/services/well-known/matrix/server && echo "✓ .well-known/matrix/server" || echo "✗ Missing"
     echo ""
-    echo "Checking PostgreSQL..."
-    docker exec matrix-postgres pg_isready -U synapse || echo "PostgreSQL not ready"
-    
-    echo ""
-    echo "Checking configuration files..."
-    test -f /opt/services/well-known/matrix/client && echo "✓ .well-known/matrix/client exists" || echo "✗ Missing"
-    test -f /opt/services/well-known/matrix/server && echo "✓ .well-known/matrix/server exists" || echo "✗ Missing"
-    
-    echo ""
-    echo "Checking for recent errors in Synapse..."
-    docker logs matrix-synapse --tail 20 2>&1 | grep -i "error\|exception" | tail -5 || echo "No recent errors"
+    echo "Note: Services initializing, may take 3-5 minutes to be fully ready"
   register: health_check
   changed_when: false
   ignore_errors: yes
@@ -155,7 +114,7 @@
   debug:
     msg:
       - "=============================================="
-      - "VPN and Services Server is Ready with HTTPS!"
+      - "VPN and Services Server Deployment Complete!"
       - "=============================================="
       - "Domain: {{ domain_name }}"
       - "Server IP: {{ server_ip }}"
@@ -163,9 +122,15 @@
       - "Services:"
       - "  - Traefik Dashboard: https://{{ domain_name }}:8080/dashboard/"
       - "  - WireGuard UI: https://vpn.{{ domain_name }}"
-      - "    Default login: admin / admin (CHANGE THIS!)"
       - "  - Jitsi Meet: https://meet.{{ domain_name }}"
-      - "    No authentication required - ready to use!"
+      - "  - Element Chat: https://chat.{{ domain_name }}"
+      - "  - Matrix Homeserver: https://matrix.{{ domain_name }}"
+      - ""
+      - "⚠️  IMPORTANT: Services are starting, wait 3-5 minutes"
+      - ""
+      - "Health Check Commands:"
+      - "  ssh root@{{ server_ip }} 'bash /opt/services/health-check.sh'"
+      - "  (or use scripts/health-check.sh from your local machine)"
       - ""
       - "DNS Configuration:"
       - "  Update your domain's nameservers to:"
