@@ -172,12 +172,14 @@ services:
       # Client API (port 8008)
       - "traefik.http.routers.matrix.rule=Host(`matrix.{{ domain_name }}`)"
       - "traefik.http.routers.matrix.entrypoints=websecure"
+      - "traefik.http.routers.matrix.service=matrix"
       - "traefik.http.services.matrix.loadbalancer.server.port=8008"
       - "traefik.http.services.matrix.loadbalancer.server.scheme=http"
       - "traefik.http.routers.matrix.tls.certresolver=letsencrypt"
       # Federation API (port 8448)
       - "traefik.http.routers.matrix-federation.rule=Host(`matrix.{{ domain_name }}`)"
       - "traefik.http.routers.matrix-federation.entrypoints=federation"
+      - "traefik.http.routers.matrix-federation.service=matrix-federation"
       - "traefik.http.services.matrix-federation.loadbalancer.server.port=8008"
       - "traefik.http.routers.matrix-federation.tls.certresolver=letsencrypt"
       - "traefik.http.middlewares.upload-limit.buffering.maxRequestBodyBytes=1073741824"
