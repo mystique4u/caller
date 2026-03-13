@@ -1,0 +1,33 @@
+---
+# yamllint configuration for Ansible project
+
+extends: relaxed
+
+rules:
+  line-length:
+    max: 200
+    level: warning
+  
+  indentation:
+    spaces: 2
+    indent-sequences: true
+  
+  comments:
+    min-spaces-from-content: 1
+  
+  # Allow duplicate keys (Ansible uses this for multiple labels)
+  key-duplicates: disable
+  
+  # Allow truthy values (yes/no/on/off)
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no', 'on', 'off']
+    check-keys: false
+  
+  # Trailing spaces are not critical for Ansible
+  trailing-spaces: disable
+
+ignore: |
+  .github/
+  venv/
+  .venv/
+  ansible/playbook_mono.yml
