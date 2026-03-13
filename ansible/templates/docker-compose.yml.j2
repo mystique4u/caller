@@ -77,7 +77,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.jitsi.rule=Host(`meet.{{ domain_name }}`)"
       - "traefik.http.routers.jitsi.entrypoints=websecure"
-      - "traefik.http.services. "jitsi.loadbalancer.server.port=80"
+      - "traefik.http.services.jitsi.loadbalancer.server.port=80"
       - "traefik.http.services.jitsi.loadbalancer.server.scheme=http"
       - "traefik.http.routers.jitsi.tls.certresolver=letsencrypt"
 
