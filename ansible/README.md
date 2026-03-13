@@ -8,8 +8,7 @@ The playbook has been refactored into a modular structure for better maintainabi
 
 ```
 ansible/
-├── playbook-refactored.yml    # New modular main playbook
-├── playbook.yml                # Original monolithic playbook (keep for reference)
+├── playbook.yml                # Main playbook (modular structure)
 ├── inventory.ini               # Server inventory
 ├── ansible.cfg                 # Ansible configuration
 ├── tasks/                      # Task files (modular)
@@ -31,22 +30,22 @@ ansible/
 
 ### Run the full playbook:
 ```bash
-ansible-playbook -i inventory.ini playbook-refactored.yml
+ansible-playbook -i inventory.ini playbook.yml
 ```
 
 ### Run specific tags only:
 ```bash
 # Only system setup and Docker
-ansible-playbook -i inventory.ini playbook-refactored.yml --tags system,docker
+ansible-playbook -i inventory.ini playbook.yml --tags system,docker
 
 # Only Matrix configuration
-ansible-playbook -i inventory.ini playbook-refactored.yml --tags matrix
+ansible-playbook -i inventory.ini playbook.yml --tags matrix
 
 # Only service deployment
-ansible-playbook -i inventory.ini playbook-refactored.yml --tags services
+ansible-playbook -i inventory.ini playbook.yml --tags services
 
 # Skip backup configuration
-ansible-playbook -i inventory.ini playbook-refactored.yml --skip-tags backup
+ansible-playbook -i inventory.ini playbook.yml --skip-tags backup
 ```
 
 ## Available Tags
@@ -73,25 +72,9 @@ ansible-playbook -i inventory.ini playbook-refactored.yml --skip-tags backup
 6. **Readability**: Main playbook is now ~70 lines instead of >1000
 7. **Testing**: Easier to test individual components
 
-## Migration from Old Playbook
+## How It Works
 
-The old `playbook.yml` still works. To migrate to the new structure:
-
-1. **Test the new playbook** in a staging environment first
-2. **Update your CI/CD** to use `playbook-refactored.yml`
-3. **Keep the old playbook** as backup during transition
-4. **Review and customize** task files as needed
-
-### Equivalent commands:
-```bash
-# Old way
-ansible-playbook -i inventory.ini playbook.yml
-
-# New way
-ansible-playbook -i inventory.ini playbook-refactored.yml
-```
-
-Both produce the same result, but the new way is more maintainable.
+The playbook uses `include_tasks` to load modular task files. This keeps the main playbook clean (~70 lines) while organizing functionality into logical components. Each task file can be executed selectively using tags.
 
 ## Customization
 
@@ -131,18 +114,18 @@ See the main playbook for required environment variables:
 ### Task fails in middle of playbook:
 Use tags to resume from that point:
 ```bash
-ansible-playbook -i inventory.ini playbook-refactored.yml --start-at-task="Task Name"
+ansible-playbook -i inventory.ini playbook.yml --start-at-task="Task Name"
 ```
 
 ### Want to see what will run:
 ```bash
-ansible-playbook -i inventory.ini playbook-refactored.yml --list-tasks
-ansible-playbook -i inventory.ini playbook-refactored.yml --list-tags
+ansible-playbook -i inventory.ini playbook.yml --list-tasks
+ansible-playbook -i inventory.ini playbook.yml --list-tags
 ```
 
 ### Run in check mode (dry run):
 ```bash
-ansible-playbook -i inventory.ini playbook-refactored.yml --check
+ansible-playbook -i inventory.ini playbook.yml --check
 ```
 
 ## Contributing
