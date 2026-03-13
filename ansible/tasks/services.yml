@@ -20,7 +20,7 @@
   until: docker_result.rc == 0
 
 - name: Verify Docker containers are running
-  shell: docker ps --filter "status=running" --format "{{{{.Names}}}}" | grep -E "traefik|matrix|element" | wc -l
+  shell: docker ps --filter "status=running" | grep -E "traefik|matrix|element" | wc -l
   register: running_containers
   changed_when: false
   failed_when: false
@@ -70,7 +70,7 @@
   shell: |
     echo "=== Quick Deployment Status ==="
     echo "Containers running:"
-    docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "traefik|matrix|element|livekit|jitsi"
+    docker ps | grep -E "traefik|matrix|element|livekit|jitsi" | awk '{print $NF}' || echo "None found"
     echo ""
     echo "Configuration files:"
     test -f /opt/services/well-known/matrix/client && echo "✓ .well-known/matrix/client" || echo "✗ Missing"
