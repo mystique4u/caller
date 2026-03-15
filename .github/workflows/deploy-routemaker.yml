@@ -140,13 +140,19 @@ jobs:
               exit 1
             fi
             
-            # Check HTTP response
-            if docker exec routemaker curl -f http://localhost:3000 > /dev/null 2>&1; then
-              echo "✅ HTTP endpoint responding"
-            else
-              echo "❌ HTTP endpoint not responding"
-              exit 1
-            fi
+            # Check HTTP response with retries
+            echo "Checking HTTP endpoint..."
+            for i in {1..10}; do
+              if docker exec routemaker curl -f http://localhost:3000 > /dev/null 2>&1; then
+                echo "✅ HTTP endpoint responding"
+                exit 0
+              fi
+              echo "Waiting for app to start... ($i/10)"
+              sleep 2
+            done
+            echo "❌ HTTP endpoint not responding after 20 seconds"
+            docker logs routemaker --tail 30
+            exit 1
             
             # Check Node.js version
             NODE_VERSION=$(docker exec routemaker node -v)
