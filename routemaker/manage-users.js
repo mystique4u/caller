@@ -28,10 +28,11 @@ async function questionHidden(query) {
   return await question(query);
 }
 
-async function createUser() {
+async function createUser(cliUsername = null, cliPassword = null) {
   console.log('\n=== RouteMaker - Create User ===\n');
   
-  const username = await question('Username: ');
+  // Support non-interactive mode via CLI arguments
+  const username = cliUsername || await question('Username: ');
   
   if (!username || username.length < 3) {
     console.error('Error: Username must be at least 3 characters');
@@ -47,41 +48,37 @@ async function createUser() {
     process.exit(1);
   }
 
-  const password = await questionHidden('Password: ');
+  let password;
+  if (cliPassword) {
+    // Non-interactive mode: use provided password
+    password = cliPassword;
+  } else {
+    // Interactive mode: prompt for password
+    password = await questionHidden('Password: ');
+    
+    if (!password || password.length < 6) {
+      console.error('\nError: Password must be at least 6 characters');
+      rl.close();
+      process.exit(1);
+    }
+
+    const passwordConfirm = await questionHidden('Confirm password: ');
+    
+    if (password !== passwordConfirm) {
+      console.error('\nError: Passwords do not match');
+      rl.close();
+      process.exit(1);
+    }
+  }
   
   if (!password || password.length < 6) {
-    console.error('\nError: Password must be at least 6 characters');
+    console.error('Error: Password must be at least 6 characters');
     rl.close();
     process.exit(1);
   }
 
-  const passwordConfirm = await questionHidden('Confirm password: ');
-  
-  if (password !== passwordConfirm) {
-    console.error('\nError: Passwords do not match');
-    rl.close();
-    process.exit(1);
-  }
-
-  // Select color
-  console.log('\nAvailable colors:');
-  colors.forEach((color, idx) => {
-    console.log(`  ${idx + 1}. ${color}`);
-  });
-  
-  const colorChoice = await question(`Choose color (1-${colors.length}) or press Enter for random: `);
-  let color;
-  
-  if (colorChoice && !isNaN(colorChoice)) {
-    const idx = parseInt(colorChoice) - 1;
-    if (idx >= 0 && idx < colors.length) {
-      color = colors[idx];
-    } else {
-      color = colors[Math.floor(Math.random() * colors.length)];
-    }
-  } else {
-    color = colors[Math.floor(Math.random() * colors.length)];
-  }
+  // Always use random color
+  const color = colors[Math.floor(Math.random() * colors.length)];
 
   // Hash password and create user
   const hashedPassword = bcrypt.hashSync(password, 10);
@@ -150,10 +147,12 @@ async function deleteUser() {
 
 async function main() {
   const command = process.argv[2];
+  const username = process.argv[3];
+  const password = process.argv[4];
   
   switch (command) {
     case 'create':
-      await createUser();
+      await createUser(username, password);
       break;
     case 'list':
       await listUsers();
@@ -165,9 +164,13 @@ async function main() {
       console.log('RouteMaker User Management');
       console.log('');
       console.log('Usage:');
-      console.log('  node manage-users.js create  - Create a new user');
-      console.log('  node manage-users.js list    - List all users');
-      console.log('  node manage-users.js delete  - Delete a user');
+      console.log('  node manage-users.js create [username] [password] - Create a new user');
+      console.log('  node manage-users.js list                         - List all users');
+      console.log('  node manage-users.js delete                       - Delete a user');
+      console.log('');
+      console.log('Examples:');
+      console.log('  Interactive:     node manage-users.js create');
+      console.log('  Non-interactive: node manage-users.js create john secret123');
       process.exit(1);
   }
 }
