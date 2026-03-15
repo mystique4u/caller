@@ -58,13 +58,17 @@ jobs:
         uses: actions/checkout@v6
       
       - name: Setup SSH key
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ needs.get-server-ip.outputs.server_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${SERVER_IP} >> ~/.ssh/known_hosts
       
       - name: Sync RouteMaker files to server
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           echo "📦 Syncing RouteMaker application files..."
           rsync -avz --delete \
@@ -72,14 +76,16 @@ jobs:
             --exclude='data/*.db' \
             --exclude='.git' \
             --exclude='.gitignore' \
-            -e "ssh -i ~/.ssh/id_rsa" \
-            routemaker/ root@${{ needs.get-server-ip.outputs.server_ip }}:/opt/services/routemaker/
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+            routemaker/ root@${SERVER_IP}:/opt/services/routemaker/
           echo "✅ Files synced successfully"
       
       - name: Rebuild and restart RouteMaker container
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           echo "🔨 Rebuilding RouteMaker Docker image..."
-          ssh -i ~/.ssh/id_rsa root@${{ needs.get-server-ip.outputs.server_ip }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
             set -e
             cd /opt/services/routemaker
             
@@ -101,9 +107,11 @@ jobs:
           EOF
       
       - name: Wait for container to be healthy
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           echo "⏳ Waiting for RouteMaker to be healthy..."
-          ssh -i ~/.ssh/id_rsa root@${{ needs.get-server-ip.outputs.server_ip }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
             for i in {1..30}; do
               if docker ps | grep -q "routemaker.*healthy\|routemaker.*Up"; then
                 echo "✅ RouteMaker is healthy"
@@ -118,9 +126,11 @@ jobs:
           EOF
       
       - name: Verify deployment
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           echo "🔍 Verifying RouteMaker deployment..."
-          ssh -i ~/.ssh/id_rsa root@${{ needs.get-server-ip.outputs.server_ip }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
             # Check container status
             if docker ps | grep -q routemaker; then
               echo "✅ Container is running"
@@ -148,12 +158,14 @@ jobs:
           EOF
       
       - name: Display deployment summary
+        env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "✅ RouteMaker Deployment Complete"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
-          echo "🌐 Application URL: https://maker.${{ secrets.DOMAIN_NAME }}"
+          echo "🌐 Application URL: https://maker.${DOMAIN_NAME}"
           echo "🔧 Manage users: docker exec -it routemaker node manage-users.js"
           echo "📊 View logs: docker logs -f routemaker"
           echo ""
