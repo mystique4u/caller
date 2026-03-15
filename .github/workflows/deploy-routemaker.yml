@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/routemaker-only-deploy
     paths:
       - 'routemaker/**'
       - '.github/workflows/deploy-routemaker.yml'
