@@ -34,7 +34,7 @@ services:
     environment:
       - WGUI_USERNAME=admin
       - WGUI_PASSWORD=admin
-      - WGUI_SESSION_SECRET=supersecretkey123456789012345678901234567890
+      - WGUI_SESSION_SECRET={{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}
       - WGUI_ENDPOINT_ADDRESS=vpn.{{ domain_name }}
       - WGUI_DNS=1.1.1.1,1.0.0.1
       - WGUI_MTU=1420

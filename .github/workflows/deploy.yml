@@ -58,6 +58,7 @@ jobs:
           # - .example, .sample, .template files
           # - Comments
           # - Ansible lookup('env', ...) patterns (correct way to use env vars)
+          # - Ansible lookup('password', ...) patterns (correct way to generate secrets)
           # - GitHub Secrets references
           if grep -r -i -E "(password|secret|api_key|token).*=.*['\"][^'\"]{8,}['\"]" \
             --exclude="*.example" \
@@ -67,6 +68,7 @@ jobs:
             terraform/ ansible/ 2>/dev/null | \
             grep -v "^[[:space:]]*#" | \
             grep -v "lookup('env'" | \
+            grep -v "lookup('password'" | \
             grep -v "secrets\." ; then
             echo "::error::Found potential hardcoded secrets in actual code!"
             echo "::error::Use GitHub Secrets instead of hardcoding sensitive values"
