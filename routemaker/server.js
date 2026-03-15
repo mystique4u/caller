@@ -11,6 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 const { create } = require('xmlbuilder2');
 
 const app = express();
+app.set('trust proxy', true); // Trust Traefik reverse proxy
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
