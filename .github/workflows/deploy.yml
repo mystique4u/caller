@@ -53,6 +53,7 @@ jobs:
         
       - name: Check for secrets in code
         run: |
+          set -e  # Exit immediately if any command fails
           echo "🔍 Scanning for potential secrets..."
           # Exclude:
           # - .example, .sample, .template files
@@ -85,6 +86,7 @@ jobs:
           
       - name: Validate Ansible syntax
         run: |
+          set -e  # Exit immediately if any command fails
           echo "🔍 Installing Ansible..."
           pip install ansible ansible-lint
           echo "✅ Checking Ansible playbook syntax..."
@@ -118,7 +120,8 @@ jobs:
           
       - name: Terraform Format Check
         id: fmt
-        run: |
+        ruset -e  # Exit immediately if any command fails
+          n: |
           echo "🔍 Checking Terraform formatting..."
           terraform fmt -check -recursive
           echo "✅ Terraform files are properly formatted"
@@ -126,13 +129,15 @@ jobs:
       - name: Terraform Init
         id: init
         run: |
+          set -e  # Exit immediately if any command fails
           echo "🔧 Initializing Terraform..."
           terraform init
           echo "✅ Terraform initialized"
         
       - name: Terraform Validate
         id: validate
-        run: |
+        ruset -e  # Exit immediately if any command fails
+          n: |
           echo "🔍 Validating Terraform configuration..."
           terraform validate -no-color
           echo "✅ Terraform configuration is valid"
@@ -192,6 +197,7 @@ jobs:
           
       - name: Check for common security issues
         run: |
+          set -e  # Exit immediately if any command fails
           echo "🔍 Checking for common security misconfigurations..."
           
           # Check for SSH (port 22) open to the world - this is a real security risk
@@ -200,11 +206,18 @@ jobs:
           fi
           
           # Check for exposed database ports
+          has_error=0
           for port in 3306 5432 27017 6379 9200; do
             if grep -B5 -A5 -E "port[[:space:]]*= \"${port}\"" main.tf | grep "0.0.0.0/0" | grep -v "#" > /dev/null 2>&1; then
               echo "::error::Database port $port is exposed to the internet!"
+              has_error=1
             fi
           done
+          
+          if [ $has_error -eq 1 ]; then
+            echo "::error::Security check failed - fix the issues above"
+            exit 1
+          fi
           
           echo "✅ Security check complete"
 
