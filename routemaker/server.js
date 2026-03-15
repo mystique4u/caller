@@ -11,6 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 const { create } = require('xmlbuilder2');
 
 const app = express();
+app.set('trust proxy', true); // Trust Traefik reverse proxy
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
@@ -72,6 +73,7 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   }
 }));
@@ -81,9 +83,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Authentication middleware
 function requireAuth(req, res, next) {
+  console.log('requireAuth check:', {
+    sessionID: req.sessionID,
+    userId: req.session.userId,
+    path: req.path,
+    hasCookie: !!req.headers.cookie
+  });
+  
   if (req.session.userId) {
     next();
   } else {
+    console.log('Auth failed - no userId in session');
     res.status(401).json({ error: 'Unauthorized' });
   }
 }
@@ -159,6 +169,12 @@ app.post('/api/login', (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.userColor = user.color;
+    
+    console.log('Session set:', {
+      userId: req.session.userId,
+      sessionID: req.sessionID,
+      cookie: req.session.cookie
+    });
     
     console.log('Login successful:', username);
     
@@ -334,39 +350,57 @@ app.get('/api/warnings', requireAuth, (req, res) => {
 });
 
 app.post('/api/warnings', requireAuth, (req, res) => {
-  const { type, description, lat, lng } = req.body;
-  
-  if (!type || lat === undefined || lng === undefined) {
-    return res.status(400).json({ error: 'Type and coordinates required' });
+  try {
+    const { type, description, lat, lng } = req.body;
+    
+    console.log('POST /api/warnings - Request body:', JSON.stringify(req.body));
+    console.log('User ID from session:', req.session.userId);
+    
+    if (!type || lat === undefined || lng === undefined) {
+      console.log('Validation failed - missing required fields');
+      return res.status(400).json({ error: 'Type and coordinates required' });
+    }
+
+    // Allow empty description, default to empty string
+    const desc = description || '';
+
+    const id = uuidv4();
+    const user = db.prepare('SELECT username, color FROM users WHERE id = ?').get(req.session.userId);
+    
+    if (!user) {
+      console.log('User not found in database for ID:', req.session.userId);
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    console.log('Inserting warning:', { id, user_id: req.session.userId, type, description: desc, lat, lng });
+    
+    db.prepare(`
+      INSERT INTO warnings (id, user_id, type, description, lat, lng)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, req.session.userId, type, desc, lat, lng);
+
+    const warning = {
+      id,
+      user_id: req.session.userId,
+      type,
+      description: desc,
+      lat,
+      lng,
+      username: user.username,
+      user_color: user.color,
+      created_at: new Date().toISOString()
+    };
+
+    // Broadcast to all connected clients
+    broadcastRouteUpdate({ type: 'warning_new', warning });
+
+    console.log('Warning saved successfully:', id);
+    res.json({ success: true, warning });
+  } catch (error) {
+    console.error('Error saving warning:', error.message);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ error: 'Failed to save warning: ' + error.message });
   }
-
-  // Allow empty description, default to empty string
-  const desc = description || '';
-
-  const id = uuidv4();
-  const user = db.prepare('SELECT username, color FROM users WHERE id = ?').get(req.session.userId);
-  
-  db.prepare(`
-    INSERT INTO warnings (id, user_id, type, description, lat, lng)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, req.session.userId, type, desc, lat, lng);
-
-  const warning = {
-    id,
-    user_id: req.session.userId,
-    type,
-    description: desc,
-    lat,
-    lng,
-    username: user.username,
-    user_color: user.color,
-    created_at: new Date().toISOString()
-  };
-
-  // Broadcast to all connected clients
-  broadcastRouteUpdate({ type: 'warning_new', warning });
-
-  res.json({ success: true, warning });
 });
 
 app.delete('/api/warnings/:id', requireAuth, (req, res) => {
