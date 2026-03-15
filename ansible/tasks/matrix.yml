@@ -1,0 +1,105 @@
+---
+# Matrix/Synapse Configuration Tasks
+- name: Generate Matrix Synapse configuration
+  shell: |
+    docker run --rm \
+      -v /opt/services/matrix/synapse:/data \
+      -e SYNAPSE_SERVER_NAME={{ domain_name }} \
+      -e SYNAPSE_REPORT_STATS=no \
+      {{ matrix_synapse_image }} generate
+  args:
+    creates: /opt/services/matrix/synapse/homeserver.yaml
+
+- name: Configure Matrix Synapse PostgreSQL database
+  shell: |
+    cat > /tmp/db_config.yml << 'EOF'
+    database:
+      name: psycopg2
+      args:
+        user: synapse
+        password: {{ postgres_password }}
+        database: synapse
+        host: matrix-postgres
+        port: 5432
+        cp_min: 5
+        cp_max: 10
+    EOF
+    
+    awk '
+      /^database:/ { skip=1; next }
+      /^[a-z_]+:/ && skip { skip=0 }
+      !skip { print }
+    ' /opt/services/matrix/synapse/homeserver.yaml > /tmp/homeserver_no_db.yaml
+    
+    (grep "^#" /opt/services/matrix/synapse/homeserver.yaml || true
+     cat /tmp/db_config.yml
+     echo ""
+     grep -v "^#" /tmp/homeserver_no_db.yaml) > /opt/services/matrix/synapse/homeserver.yaml.new
+    
+    mv /opt/services/matrix/synapse/homeserver.yaml.new /opt/services/matrix/synapse/homeserver.yaml
+    rm -f /tmp/db_config.yml /tmp/homeserver_no_db.yaml
+  when: postgres_password is defined
+
+- name: Enable registration in Matrix (optional)
+  lineinfile:
+    path: /opt/services/matrix/synapse/homeserver.yaml
+    regexp: '^enable_registration:'
+    line: 'enable_registration: false'
+    backup: yes
+
+- name: Set registration shared secret
+  lineinfile:
+    path: /opt/services/matrix/synapse/homeserver.yaml
+    regexp: '^registration_shared_secret:'
+    line: 'registration_shared_secret: "{{ matrix_registration_secret }}"'
+    backup: yes
+  when: matrix_registration_secret is defined
+
+- name: Set max upload size to 1GB
+  lineinfile:
+    path: /opt/services/matrix/synapse/homeserver.yaml
+    regexp: '^max_upload_size:'
+    line: 'max_upload_size: 1073741824'
+    backup: yes
+
+- name: Set public_baseurl
+  lineinfile:
+    path: /opt/services/matrix/synapse/homeserver.yaml
+    regexp: '^public_baseurl:'
+    line: 'public_baseurl: https://matrix.{{ domain_name }}'
+    backup: yes
+
+# Federation disabled for simplified setup
+# - name: Configure trusted key servers for federation
+#   lineinfile:
+#     path: /opt/services/matrix/synapse/homeserver.yaml
+#     regexp: '^trusted_key_servers:'
+#     line: |
+#       trusted_key_servers:
+#         - server_name: "matrix.org"
+#     backup: yes
+
+- name: Create Matrix well-known files
+  copy:
+    content: "{{ item.content }}"
+    dest: "{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - content: |
+        {
+          "m.homeserver": {
+            "base_url": "https://matrix.{{ domain_name }}"
+          }
+        }
+      dest: /opt/services/well-known/matrix/client
+    - content: |
+        {
+          "m.server": "matrix.{{ domain_name }}:443"
+        }
+      dest: /opt/services/well-known/matrix/server
+
+- name: Create Element Web configuration
+  template:
+    src: element-config.json.j2
+    dest: /opt/services/matrix/element/config.json
+    mode: '0644'

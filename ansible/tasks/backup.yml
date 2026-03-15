@@ -1,0 +1,108 @@
+---
+# Backup Configuration Tasks
+- name: Create backup script
+  copy:
+    content: |
+      #!/bin/bash
+      set -e
+      
+      # Configuration
+      STORAGEBOX_HOST="{{ lookup('env', 'STORAGEBOX_HOST') }}"
+      STORAGEBOX_USER="{{ lookup('env', 'STORAGEBOX_USER') }}"
+      STORAGEBOX_PASSWORD="{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
+      STORAGEBOX_PORT="23"
+      REMOTE_BASE="/home/backups/hosts/caller"
+      BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
+      LOCAL_BACKUP_DIR="/tmp/backup-${BACKUP_DATE}"
+      
+      echo "=== Starting backup at $(date) ==="
+      mkdir -p "${LOCAL_BACKUP_DIR}"
+      
+      echo "📦 Backing up PostgreSQL database..."
+      docker exec matrix-postgres pg_dump -U synapse synapse | gzip > "${LOCAL_BACKUP_DIR}/matrix-postgres-${BACKUP_DATE}.sql.gz"
+      
+      echo "📦 Backing up Matrix Synapse data..."
+      tar -czf "${LOCAL_BACKUP_DIR}/matrix-data-${BACKUP_DATE}.tar.gz" -C /opt/services/matrix .
+      
+      echo "📦 Backing up Jitsi configs..."
+      tar -czf "${LOCAL_BACKUP_DIR}/jitsi-${BACKUP_DATE}.tar.gz" -C /opt/services/jitsi .
+      
+      echo "📦 Backing up WireGuard configs..."
+      tar -czf "${LOCAL_BACKUP_DIR}/wireguard-${BACKUP_DATE}.tar.gz" -C /etc wireguard
+      
+      echo "📦 Backing up WireGuard UI database..."
+      tar -czf "${LOCAL_BACKUP_DIR}/wireguard-ui-${BACKUP_DATE}.tar.gz" -C /opt/services/wireguard-ui .
+      
+      echo "📦 Backing up Traefik SSL certificates..."
+      tar -czf "${LOCAL_BACKUP_DIR}/traefik-${BACKUP_DATE}.tar.gz" -C /opt/services/traefik .
+      
+      echo "� Backing up RouteMaker database..."
+      tar -czf "${LOCAL_BACKUP_DIR}/routemaker-${BACKUP_DATE}.tar.gz" -C /opt/services/routemaker/data .
+      
+      echo "�📝 Creating backup manifest..."
+      cat > "${LOCAL_BACKUP_DIR}/MANIFEST.txt" << EOF
+      ==========================================
+      BACKUP MANIFEST
+      ==========================================
+      Backup Date: $(date)
+      Hostname: $(hostname)
+      IP Address: $(hostname -I | awk '{print $1}')
+      
+      Total backup size: $(du -sh ${LOCAL_BACKUP_DIR} | awk '{print $1}')
+      ==========================================
+      EOF
+      
+      echo "☁️  Uploading to Storage Box..."
+      lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_COMMANDS
+      set sftp:auto-confirm yes
+      set ssl:verify-certificate no
+      mkdir -p ${REMOTE_BASE}
+      cd ${REMOTE_BASE}
+      lcd ${LOCAL_BACKUP_DIR}
+      mput *.gz
+      put MANIFEST.txt
+      bye
+      LFTP_COMMANDS
+      
+      echo "🧹 Cleaning up old backups (keeping last 7)..."
+      lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_CLEANUP
+      set sftp:auto-confirm yes
+      set ssl:verify-certificate no
+      cd ${REMOTE_BASE}
+      cls -1 --sort=date | head -n -7 | xargs -r rm
+      bye
+      LFTP_CLEANUP
+      
+      echo "🗑️  Cleaning up local temporary files..."
+      rm -rf "${LOCAL_BACKUP_DIR}"
+      
+      echo "✅ Backup completed successfully!"
+    dest: /opt/backup/backup.sh
+    mode: '0700'
+
+- name: Create backup cron job (daily at 2 AM)
+  cron:
+    name: "Daily backup to Storage Box"
+    minute: "0"
+    hour: "2"
+    job: "/opt/backup/backup.sh >> /var/log/backup.log 2>&1"
+    user: root
+
+- name: Run initial backup test
+  shell: /opt/backup/backup.sh
+  environment:
+    STORAGEBOX_HOST: "{{ lookup('env', 'STORAGEBOX_HOST') }}"
+    STORAGEBOX_USER: "{{ lookup('env', 'STORAGEBOX_USER') }}"
+    STORAGEBOX_PASSWORD: "{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
+  register: backup_result
+  ignore_errors: yes
+
+- name: Display backup results
+  debug:
+    msg: "{{ backup_result.stdout_lines | default(['Backup completed']) }}"
+  when: backup_result is defined
+
+- name: Display backup errors if any
+  debug:
+    msg: "{{ backup_result.stderr_lines | default(['No errors']) }}"
+  when: backup_result is defined and backup_result.failed

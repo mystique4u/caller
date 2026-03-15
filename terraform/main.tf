@@ -187,6 +187,15 @@ resource "hcloud_zone_record" "element" {
   value = hcloud_server.vm.ipv4_address
 }
 
+# DNS A Record for RouteMaker
+resource "hcloud_zone_record" "routemaker" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "maker"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
+}
+
 # Outputs
 output "public_ip" {
   description = "The public IPv4 address of the VM"
