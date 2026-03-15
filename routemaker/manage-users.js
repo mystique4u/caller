@@ -28,7 +28,7 @@ async function questionHidden(query) {
   return await question(query);
 }
 
-async function createUser(cliUsername = null, cliPassword = null) {
+async function createUser(cliUsername = null, cliPassword = null, skipIfExists = false) {
   console.log('\n=== RouteMaker - Create User ===\n');
   
   // Support non-interactive mode via CLI arguments
@@ -43,9 +43,16 @@ async function createUser(cliUsername = null, cliPassword = null) {
   // Check if user exists
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (existing) {
-    console.error('Error: User already exists');
-    rl.close();
-    process.exit(1);
+    if (skipIfExists) {
+      console.log(`⏭️  User '${username}' already exists - skipping`);
+      rl.close();
+      db.close();
+      process.exit(0);
+    } else {
+      console.error('Error: User already exists');
+      rl.close();
+      process.exit(1);
+    }
   }
 
   let password;
@@ -149,10 +156,11 @@ async function main() {
   const command = process.argv[2];
   const username = process.argv[3];
   const password = process.argv[4];
+  const skipIfExists = process.argv.includes('--skip-if-exists');
   
   switch (command) {
     case 'create':
-      await createUser(username, password);
+      await createUser(username, password, skipIfExists);
       break;
     case 'list':
       await listUsers();
@@ -164,13 +172,17 @@ async function main() {
       console.log('RouteMaker User Management');
       console.log('');
       console.log('Usage:');
-      console.log('  node manage-users.js create [username] [password] - Create a new user');
-      console.log('  node manage-users.js list                         - List all users');
-      console.log('  node manage-users.js delete                       - Delete a user');
+      console.log('  node manage-users.js create [username] [password] [--skip-if-exists] - Create a new user');
+      console.log('  node manage-users.js list                                            - List all users');
+      console.log('  node manage-users.js delete                                          - Delete a user');
+      console.log('');
+      console.log('Options:');
+      console.log('  --skip-if-exists    Skip creation if user already exists (exit code 0)');
       console.log('');
       console.log('Examples:');
       console.log('  Interactive:     node manage-users.js create');
       console.log('  Non-interactive: node manage-users.js create john secret123');
+      console.log('  Pipeline mode:   node manage-users.js create john secret123 --skip-if-exists');
       process.exit(1);
   }
 }

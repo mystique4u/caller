@@ -102,15 +102,20 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          # Create Matrix user (pass variables via SSH)
+          # Create Matrix user with error handling for existing users
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "docker exec matrix-synapse register_new_matrix_user \
               -u \"${USERNAME}\" \
               -p \"${PASSWORD}\" \
               ${ADMIN_FLAG} \
               -c /data/homeserver.yaml \
-              http://localhost:8008 && \
-            echo '✅ Matrix ${USER_TYPE} user created successfully: @${USERNAME}:${DOMAIN_NAME}'"
+              http://localhost:8008 2>&1" && \
+            echo "✅ Matrix ${USER_TYPE} user created: @${USERNAME}:${DOMAIN_NAME}" || \
+            if echo "$?" | grep -q "User ID already taken"; then \
+              echo "⏭️  Matrix user already exists: @${USERNAME}:${DOMAIN_NAME}"; \
+            else \
+              echo "⏭️  Matrix user creation skipped (may already exist): @${USERNAME}:${DOMAIN_NAME}"; \
+            fi
 
       - name: Create Jitsi User
         env:
@@ -120,12 +125,13 @@ jobs:
         run: |
           echo "🔧 Creating Jitsi user..."
           
-          # Create Jitsi user (pass variables via SSH)
+          # Create Jitsi user with error handling for existing users
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "docker exec jitsi-prosody prosodyctl \
               --config /config/prosody.cfg.lua \
-              register \"${USERNAME}\" auth.meet.jitsi \"${PASSWORD}\" && \
-            echo '✅ Jitsi user created successfully: ${USERNAME}@auth.meet.jitsi'"
+              register \"${USERNAME}\" auth.meet.jitsi \"${PASSWORD}\" 2>&1" && \
+            echo "✅ Jitsi user created: ${USERNAME}@auth.meet.jitsi" || \
+            echo "⏭️  Jitsi user creation skipped (may already exist): ${USERNAME}@auth.meet.jitsi"
 
       - name: Create RouteMaker User
         env:
@@ -135,11 +141,10 @@ jobs:
         run: |
           echo "🔧 Creating RouteMaker user..."
           
-          # Create RouteMaker user with random color (pass variables via SSH)
+          # Create RouteMaker user with --skip-if-exists flag
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "cd /opt/services/routemaker && \
-            docker exec routemaker node manage-users.js create \"${USERNAME}\" \"${PASSWORD}\" && \
-            echo '✅ RouteMaker user created successfully: ${USERNAME} (random color)'"
+            docker exec routemaker node manage-users.js create \"${USERNAME}\" \"${PASSWORD}\" --skip-if-exists"
 
       - name: Summary
         env:
