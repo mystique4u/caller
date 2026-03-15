@@ -70,11 +70,16 @@
   shell: |
     echo "=== Quick Deployment Status ==="
     echo "Containers running:"
-    docker ps | grep -E "traefik|matrix|element|livekit|jitsi" | awk '{print $NF}' || echo "None found"
+    docker ps | grep -E "traefik|matrix|element|livekit|jitsi|routemaker" | awk '{print $NF}' || echo "None found"
     echo ""
     echo "Configuration files:"
     test -f /opt/services/well-known/matrix/client && echo "✓ .well-known/matrix/client" || echo "✗ Missing"
     test -f /opt/services/well-known/matrix/server && echo "✓ .well-known/matrix/server" || echo "✗ Missing"
+    echo ""
+    echo "RouteMaker application:"
+    test -d /opt/services/routemaker && echo "✓ Application deployed" || echo "✗ Not deployed"
+    docker exec routemaker node -v 2>/dev/null && echo "✓ Node.js runtime OK" || echo "✗ Container not ready"
+    curl -s -o /dev/null -w "HTTP %{http_code}" http://localhost:3000 2>/dev/null && echo " (responded)" || echo " (no response)"
     echo ""
     echo "Note: Services initializing, may take 3-5 minutes to be fully ready"
   register: health_check
@@ -100,6 +105,11 @@
       - "  Username: @{{ matrix_admin_user }}:{{ domain_name }}"
       - "  Password: (stored in GitHub Secrets)"
       - "  Homeserver: https://matrix.{{ domain_name }}"
+      - ""
+      - "RouteMaker: https://maker.{{ domain_name }}"
+      - "  Create users: docker exec -it routemaker node manage-users.js create"
+      - "  List users: docker exec -it routemaker node manage-users.js list"
+      - "  Or use GitHub Actions: Create User workflow"
       - "=========================================="
   when: jitsi_admin_user is defined or matrix_admin_user is defined
   ignore_errors: yes
@@ -125,6 +135,7 @@
       - "  - Jitsi Meet: https://meet.{{ domain_name }}"
       - "  - Element Chat: https://chat.{{ domain_name }}"
       - "  - Matrix Homeserver: https://matrix.{{ domain_name }}"
+      - "  - RouteMaker: https://maker.{{ domain_name }}"
       - ""
       - "⚠️  IMPORTANT: Services are starting, wait 3-5 minutes"
       - ""

@@ -68,6 +68,7 @@ check_container "matrix-rtc"
 check_container "coturn"
 check_container "jitsi-web"
 check_container "wireguard-ui"
+check_container "routemaker"
 echo ""
 
 echo "2. Matrix Synapse Health"
@@ -132,9 +133,39 @@ else
 fi
 echo ""
 
-echo "6. Port Accessibility (from inside server)"
+echo "6. RouteMaker Application Health"
 echo "-----------------------------------"
-$REMOTE netstat -tlnp 2>/dev/null | grep -E ":(80|443|8008|8448|7880|7881)" || echo "No listening ports found"
+if $REMOTE docker exec routemaker node -v >/dev/null 2>&1; then
+    echo -e "${GREEN}✓${NC} RouteMaker container: Node.js runtime OK"
+    
+    # Check if application is responding
+    if $REMOTE docker exec routemaker curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null | grep -q "200"; then
+        echo -e "${GREEN}✓${NC} RouteMaker HTTP endpoint: Responding (200)"
+    else
+        echo -e "${RED}✗${NC} RouteMaker HTTP endpoint: Not responding"
+    fi
+    
+    # Check database file
+    if $REMOTE test -f /opt/services/routemaker/data/routemaker.db; then
+        echo -e "${GREEN}✓${NC} RouteMaker database: Exists"
+        # Count users
+        USER_COUNT=$($REMOTE docker exec routemaker node manage-users.js list 2>/dev/null | grep -c "created" || echo "0")
+        echo -e "${GREEN}✓${NC} RouteMaker users: $USER_COUNT registered"
+    else
+        echo -e "${YELLOW}⚠${NC} RouteMaker database: Not initialized (run manage-users.js create)"
+    fi
+    
+    # Check recent logs for errors
+    echo "Recent RouteMaker errors:"
+    $REMOTE docker logs routemaker --tail 20 2>&1 | grep -i "error\|exception\|failed" | tail -3 || echo "No recent errors"
+else
+    echo -e "${RED}✗${NC} RouteMaker container: Not running or not accessible"
+fi
+echo ""
+
+echo "7. Port Accessibility (from inside server)"
+echo "-----------------------------------"
+$REMOTE netstat -tlnp 2>/dev/null | grep -E ":(80|443|8008|8448|7880|7881|3000)" || echo "No listening ports found"
 echo ""
 
 echo "=========================================="
