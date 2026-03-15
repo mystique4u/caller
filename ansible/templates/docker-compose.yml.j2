@@ -227,9 +227,9 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.routemaker.rule=Host(`maker.{{ domain_name }}`)"
       - "traefik.http.routers.routemaker.entrypoints=websecure"
-      - "traefik.http.services.routemaker.loadbalancer.server.port=3000"
-      - "traefik.http.services.routemaker.loadbalancer.server.scheme=http"
+      - "traefik.http.routers.routemaker.tls=true"
       - "traefik.http.routers.routemaker.tls.certresolver=letsencrypt"
+      - "traefik.http.services.routemaker.loadbalancer.server.port=3000"
 
 networks:
   services:
