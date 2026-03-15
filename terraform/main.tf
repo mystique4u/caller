@@ -62,17 +62,6 @@ resource "hcloud_firewall" "vpn_services" {
     ]
   }
 
-  # Matrix federation listener
-  rule {
-    direction = "in"
-    protocol  = "tcp"
-    port      = "8448"
-    source_ips = [
-      "0.0.0.0/0",
-      "::/0"
-    ]
-  }
-
   rule {
     direction = "in"
     protocol  = "udp"
@@ -87,66 +76,6 @@ resource "hcloud_firewall" "vpn_services" {
     direction = "in"
     protocol  = "udp"
     port      = "10000"
-    source_ips = [
-      "0.0.0.0/0",
-      "::/0"
-    ]
-  }
-
-  rule {
-    direction = "in"
-    protocol  = "tcp"
-    port      = "7880"
-    source_ips = [
-      "0.0.0.0/0",
-      "::/0"
-    ]
-  }
-
-  rule {
-    direction = "in"
-    protocol  = "tcp"
-    port      = "7881"
-    source_ips = [
-      "0.0.0.0/0",
-      "::/0"
-    ]
-  }
-
-  rule {
-    direction = "in"
-    protocol  = "udp"
-    port      = "7882"
-    source_ips = [
-      "0.0.0.0/0",
-      "::/0"
-    ]
-  }
-
-  rule {
-    direction = "in"
-    protocol  = "tcp"
-    port      = "3478"
-    source_ips = [
-      "0.0.0.0/0",
-      "::/0"
-    ]
-  }
-
-  rule {
-    direction = "in"
-    protocol  = "udp"
-    port      = "3478"
-    source_ips = [
-      "0.0.0.0/0",
-      "::/0"
-    ]
-  }
-
-  rule {
-    direction = "in"
-    protocol  = "udp"
-    port      = "49152-49200"
     source_ips = [
       "0.0.0.0/0",
       "::/0"
@@ -249,15 +178,6 @@ resource "hcloud_zone_record" "matrix" {
   value = hcloud_server.vm.ipv4_address
 }
 
-# DNS SRV record for Matrix federation
-resource "hcloud_zone_record" "matrix_federation" {
-  count = var.domain_name != "" ? 1 : 0
-  zone  = data.hcloud_zone.domain[0].name
-  name  = "_matrix._tcp"
-  type  = "SRV"
-  value = "0 0 8448 matrix.${var.domain_name}."
-}
-
 # DNS A Record for Element web client
 resource "hcloud_zone_record" "element" {
   count = var.domain_name != "" ? 1 : 0
@@ -267,29 +187,11 @@ resource "hcloud_zone_record" "element" {
   value = hcloud_server.vm.ipv4_address
 }
 
-# DNS A Record for MatrixRTC auth service
-resource "hcloud_zone_record" "matrix_rtc" {
+# DNS A Record for RouteMaker
+resource "hcloud_zone_record" "routemaker" {
   count = var.domain_name != "" ? 1 : 0
   zone  = data.hcloud_zone.domain[0].name
-  name  = "rtc"
-  type  = "A"
-  value = hcloud_server.vm.ipv4_address
-}
-
-# DNS A Record for LiveKit SFU
-resource "hcloud_zone_record" "livekit" {
-  count = var.domain_name != "" ? 1 : 0
-  zone  = data.hcloud_zone.domain[0].name
-  name  = "livekit"
-  type  = "A"
-  value = hcloud_server.vm.ipv4_address
-}
-
-# DNS A Record for TURN server
-resource "hcloud_zone_record" "turn" {
-  count = var.domain_name != "" ? 1 : 0
-  zone  = data.hcloud_zone.domain[0].name
-  name  = "turn"
+  name  = "maker"
   type  = "A"
   value = hcloud_server.vm.ipv4_address
 }
