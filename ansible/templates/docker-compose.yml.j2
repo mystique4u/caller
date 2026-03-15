@@ -26,12 +26,10 @@ services:
     image: ngoduykhanh/wireguard-ui:{{ wireguard_ui_version }}
     container_name: wireguard-ui
     restart: unless-stopped
+    network_mode: host
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
-    sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv4.conf.all.src_valid_mark=1
     privileged: true
     environment:
       - WGUI_USERNAME=admin
@@ -48,14 +46,6 @@ services:
     volumes:
       - /opt/services/wireguard-ui:/app/db
       - /etc/wireguard:/etc/wireguard
-    networks:
-      - services
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.wireguard.rule=Host(`vpn.{{ domain_name }}`)"
-      - "traefik.http.routers.wireguard.entrypoints=websecure"
-      - "traefik.http.services.wireguard.loadbalancer.server.port=5000"
-      - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
 
   jitsi-web:
     image: "{{ jitsi_web_image }}"
