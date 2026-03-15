@@ -39,3 +39,9 @@
     src: wireguard-dynamic.yml.j2
     dest: /opt/services/traefik/dynamic/wireguard-ui.yml
     mode: '0644'
+
+- name: Create well-known CORS middleware configuration
+  copy:
+    src: well-known-cors.yml
+    dest: /opt/services/traefik/dynamic/well-known-cors.yml
+    mode: '0644'

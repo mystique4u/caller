@@ -84,6 +84,7 @@
     marker: "# {mark} ANSIBLE MANAGED BLOCK - Experimental Features"
     block: |
       experimental_features:
+        msc3779_enabled: true
         msc3026_enabled: true
         msc3266_enabled: true
         msc3401_enabled: true

@@ -207,6 +207,7 @@ services:
       - "traefik.http.routers.wellknown.entrypoints=websecure"
       - "traefik.http.services.wellknown.loadbalancer.server.port=80"
       - "traefik.http.routers.wellknown.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wellknown.middlewares=cors-headers@file"
 
   livekit:
     image: "{{ livekit_image }}"
