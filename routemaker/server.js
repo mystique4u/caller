@@ -72,6 +72,7 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   }
 }));
@@ -81,9 +82,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Authentication middleware
 function requireAuth(req, res, next) {
+  console.log('requireAuth check:', {
+    sessionID: req.sessionID,
+    userId: req.session.userId,
+    path: req.path,
+    hasCookie: !!req.headers.cookie
+  });
+  
   if (req.session.userId) {
     next();
   } else {
+    console.log('Auth failed - no userId in session');
     res.status(401).json({ error: 'Unauthorized' });
   }
 }
@@ -159,6 +168,12 @@ app.post('/api/login', (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.userColor = user.color;
+    
+    console.log('Session set:', {
+      userId: req.session.userId,
+      sessionID: req.sessionID,
+      cookie: req.session.cookie
+    });
     
     console.log('Login successful:', username);
     
