@@ -1238,25 +1238,38 @@ class RouteMaker {
         const btn = document.getElementById('add-warning-btn');
         btn.disabled = true;
         
+        console.log('addInstantWarning called');
+        console.log('Current GPS location:', this.currentGPSLocation);
+        
         try {
+            const requestBody = {
+                type: 'warning',
+                description: 'Warning point',
+                lat: this.currentGPSLocation.lat,
+                lng: this.currentGPSLocation.lng
+            };
+            
+            console.log('Sending warning request:', requestBody);
+            
             const response = await fetch('/api/warnings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'warning',
-                    description: 'Warning point',
-                    lat: this.currentGPSLocation.lat,
-                    lng: this.currentGPSLocation.lng
-                })
+                body: JSON.stringify(requestBody)
             });
+            
+            console.log('Warning response status:', response.status);
+            console.log('Warning response ok:', response.ok);
             
             if (response.ok) {
                 const data = await response.json();
+                console.log('Warning saved successfully:', data);
                 this.addWarningToMap(data.warning);
                 // Brief visual feedback
                 btn.classList.add('active');
                 setTimeout(() => btn.classList.remove('active'), 300);
             } else {
+                const errorText = await response.text();
+                console.error('Warning save failed:', response.status, errorText);
                 alert('Failed to save warning');
             }
         } catch (error) {
