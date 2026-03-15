@@ -62,34 +62,22 @@
     line: 'max_upload_size: 1073741824'
     backup: yes
 
-- name: Set public_baseurl for federation
+- name: Set public_baseurl
   lineinfile:
     path: /opt/services/matrix/synapse/homeserver.yaml
     regexp: '^public_baseurl:'
     line: 'public_baseurl: https://matrix.{{ domain_name }}'
     backup: yes
 
-- name: Configure trusted key servers for federation
-  lineinfile:
-    path: /opt/services/matrix/synapse/homeserver.yaml
-    regexp: '^trusted_key_servers:'
-    line: |
-      trusted_key_servers:
-        - server_name: "matrix.org"
-    backup: yes
-
-- name: Enable experimental features for Element Call
-  blockinfile:
-    path: /opt/services/matrix/synapse/homeserver.yaml
-    marker: "# {mark} ANSIBLE MANAGED BLOCK - Experimental Features"
-    block: |
-      experimental_features:
-        msc3779_enabled: true
-        msc3026_enabled: true
-        msc3266_enabled: true
-        msc3401_enabled: true
-        msc3886_enabled: true
-    backup: yes
+# Federation disabled for simplified setup
+# - name: Configure trusted key servers for federation
+#   lineinfile:
+#     path: /opt/services/matrix/synapse/homeserver.yaml
+#     regexp: '^trusted_key_servers:'
+#     line: |
+#       trusted_key_servers:
+#         - server_name: "matrix.org"
+#     backup: yes
 
 - name: Create Matrix well-known files
   copy:
@@ -101,19 +89,7 @@
         {
           "m.homeserver": {
             "base_url": "https://matrix.{{ domain_name }}"
-          },
-          "m.rtc_foci": [
-            {
-              "type": "livekit",
-              "livekit_service_url": "https://rtc.{{ domain_name }}/livekit/jwt"
-            }
-          ],
-          "org.matrix.msc3779.rtc_foci": [
-            {
-              "type": "livekit",
-              "livekit_service_url": "https://rtc.{{ domain_name }}/livekit/jwt"
-            }
-          ]
+          }
         }
       dest: /opt/services/well-known/matrix/client
     - content: |

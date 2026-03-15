@@ -1,33 +1,4 @@
 ---
-# Service Configuration Tasks (LiveKit, TURN, etc.)
-- name: Create LiveKit configuration
-  copy:
-    content: |
-      port: 7880
-      rtc:
-        tcp_port: 7881
-        udp_port: 7882
-        use_external_ip: true
-      keys:
-        "{{ livekit_api_key }}": "{{ livekit_api_secret }}"
-      room:
-        auto_create: false
-    dest: /opt/services/matrix/livekit/livekit.yaml
-    mode: '0600'
-  when: livekit_api_key is defined and livekit_api_secret is defined
-
-- name: Create TURN configuration
-  copy:
-    content: |
-      use-auth-secret
-      static-auth-secret={{ turn_shared_secret }}
-      realm={{ domain_name }}
-      listening-port=3478
-      min-port=49152
-      max-port=49200
-      external-ip={{ server_ip }}
-      listening-ip=0.0.0.0
-      fingerprint
-    dest: /opt/services/matrix/turn/turnserver.conf
-    mode: '0600'
-  when: turn_shared_secret is defined
+# Service Configuration Tasks
+# LiveKit, TURN, and RTC services removed for simplicity
+# Using Jitsi for video calls instead
