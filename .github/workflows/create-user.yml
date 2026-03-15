@@ -1,4 +1,4 @@
-name: Create User (Matrix + Jitsi)
+name: Create User (Matrix + Jitsi + RouteMaker)
 
 on:
   workflow_dispatch:
@@ -51,7 +51,7 @@ jobs:
           echo "✅ Server IP retrieved: $SERVER_IP"
 
   create-user:
-    name: Create User for Matrix and Jitsi
+    name: Create User for Matrix, Jitsi and RouteMaker
     runs-on: ubuntu-latest
     needs: get-server-ip
     # Only allow repository owners/maintainers to trigger this workflow
@@ -127,6 +127,20 @@ jobs:
               register \"${USERNAME}\" auth.meet.jitsi \"${PASSWORD}\" && \
             echo '✅ Jitsi user created successfully: ${USERNAME}@auth.meet.jitsi'"
 
+      - name: Create RouteMaker User
+        env:
+          USERNAME: ${{ github.event.inputs.username }}
+          PASSWORD: ${{ github.event.inputs.password }}
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          echo "🔧 Creating RouteMaker user..."
+          
+          # Create RouteMaker user with random color (pass variables via SSH)
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "cd /opt/services/routemaker && \
+            docker exec routemaker node manage-users.js create \"${USERNAME}\" \"${PASSWORD}\" && \
+            echo '✅ RouteMaker user created successfully: ${USERNAME} (random color)'"
+
       - name: Summary
         env:
           USERNAME: ${{ github.event.inputs.username }}
@@ -153,9 +167,15 @@ jobs:
           echo "  Full ID: [HIDDEN]@auth.meet.jitsi"
           echo "  Meeting URL: https://meet.${DOMAIN_NAME}"
           echo ""
+          echo "🗺️  RouteMaker Account:"
+          echo "  Username: [HIDDEN]"
+          echo "  App URL: https://maker.${DOMAIN_NAME}"
+          echo "  Color: Random (assigned automatically)"
+          echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📧 Credentials have been created and should be"
           echo "   shared with the user via a secure channel."
           echo "  Matrix: https://chat.${DOMAIN_NAME}"
           echo "  Jitsi: https://meet.${DOMAIN_NAME}"
+          echo "  RouteMaker: https://maker.${DOMAIN_NAME}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
