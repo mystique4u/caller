@@ -80,7 +80,6 @@ jobs:
             -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             routemaker/ root@${SERVER_IP}:/opt/services/routemaker/
           echo "✅ Files synced successfully"
-          echo "✅ Files synced successfully"
       
       - name: Rebuild and restart RouteMaker container
         env:
@@ -101,9 +100,9 @@ jobs:
             docker stop routemaker 2>/dev/null || true
             docker rm routemaker 2>/dev/null || true
             
-            # Start new container (docker-compose will use the new image)
+            # Start new container (use docker compose V2)
             cd /opt/services
-            docker-compose up -d routemaker
+            docker compose up -d routemaker
             
             echo "✅ RouteMaker container restarted"
           EOF
