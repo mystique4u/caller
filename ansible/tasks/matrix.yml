@@ -106,6 +106,12 @@
               "type": "livekit",
               "livekit_service_url": "https://rtc.{{ domain_name }}/livekit/jwt"
             }
+          ],
+          "org.matrix.msc3779.rtc_foci": [
+            {
+              "type": "livekit",
+              "livekit_service_url": "https://rtc.{{ domain_name }}/livekit/jwt"
+            }
           ]
         }
       dest: /opt/services/well-known/matrix/client
