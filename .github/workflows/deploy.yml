@@ -120,8 +120,8 @@ jobs:
           
       - name: Terraform Format Check
         id: fmt
-        ruset -e  # Exit immediately if any command fails
-          n: |
+        run: |
+          set -e  # Exit immediately if any command fails
           echo "🔍 Checking Terraform formatting..."
           terraform fmt -check -recursive
           echo "✅ Terraform files are properly formatted"
@@ -136,8 +136,8 @@ jobs:
         
       - name: Terraform Validate
         id: validate
-        ruset -e  # Exit immediately if any command fails
-          n: |
+        run: |
+          set -e  # Exit immediately if any command fails
           echo "🔍 Validating Terraform configuration..."
           terraform validate -no-color
           echo "✅ Terraform configuration is valid"
