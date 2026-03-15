@@ -20,9 +20,6 @@
     - /opt/services/matrix/synapse
     - /opt/services/matrix/postgres
     - /opt/services/matrix/element
-    - /opt/services/matrix/livekit
-    - /opt/services/matrix/rtc
-    - /opt/services/matrix/turn
     - /opt/services/well-known/matrix
 
 - name: Create backup script directory
