@@ -1,0 +1,15 @@
+http:
+  routers:
+    wireguard-ui:
+      rule: "Host(`vpn.{{ domain_name }}`)"
+      entryPoints:
+        - websecure
+      service: wireguard-ui
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    wireguard-ui:
+      loadBalancer:
+        servers:
+          - url: "http://172.18.0.1:5000"
