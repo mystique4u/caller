@@ -73,11 +73,12 @@ jobs:
           echo "📦 Syncing RouteMaker application files..."
           rsync -avz --delete \
             --exclude='node_modules' \
-            --exclude='data/*.db' \
+            --exclude='data/' \
             --exclude='.git' \
             --exclude='.gitignore' \
             -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             routemaker/ root@${SERVER_IP}:/opt/services/routemaker/
+          echo "✅ Files synced successfully"
           echo "✅ Files synced successfully"
       
       - name: Rebuild and restart RouteMaker container
