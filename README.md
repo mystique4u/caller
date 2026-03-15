@@ -1,6 +1,6 @@
 # Secure Communication Platform
 
-Fully automated deployment of **WireGuard VPN**, **Jitsi Meet video conferencing**, **Matrix messaging server**, and **Traefik reverse proxy** on Hetzner Cloud with **custom domain and HTTPS/SSL certificates**.
+Fully automated deployment of **WireGuard VPN**, **Jitsi Meet video conferencing**, **Matrix messaging server**, **RouteMaker collaborative mapping**, and **Traefik reverse proxy** on Hetzner Cloud with **custom domain and HTTPS/SSL certificates**.
 
 ## 🚀 Features
 
@@ -9,6 +9,7 @@ Fully automated deployment of **WireGuard VPN**, **Jitsi Meet video conferencing
 - ✅ **Jitsi Meet** - Secure video conferencing with authentication
 - ✅ **Matrix Synapse** - Private messaging with E2E encryption
 - ✅ **Element Web** - Modern Matrix web client
+- ✅ **RouteMaker** - Collaborative route building with real-time updates
 - ✅ **Traefik** - Automatic HTTPS with Let's Encrypt
 - ✅ **Docker-based** - All services containerized
 - ✅ **Firewall Automated** - Created and managed by Terraform
@@ -26,8 +27,13 @@ All services accessible via HTTPS with your custom domain:
 | **Jitsi Meet**        | `https://meet.yourdomain.com`            | Admin credentials from GitHub Secrets    |
 | **Matrix Synapse**    | `https://matrix.yourdomain.com`          | Homeserver URL for clients               |
 | **Element Web**       | `https://chat.yourdomain.com`            | Matrix credentials from GitHub Secrets   |
+| **RouteMaker**        | `https://maker.yourdomain.com`           | Users created by admin via CLI           |
 
 ## ⚡ Quick Start
+
+**Want to test locally first?** See [QUICKSTART_LOCAL.md](QUICKSTART_LOCAL.md) for 3-step local setup! 🚀
+
+### Production Deployment
 
 1. **Configure Required GitHub Secrets** (see below)
 2. **Push to main** or trigger "Deploy Infrastructure" workflow

@@ -1,0 +1,35 @@
+---
+# RouteMaker Application Deployment
+- name: Copy RouteMaker application files
+  synchronize:
+    src: "{{ playbook_dir }}/../routemaker/"
+    dest: /opt/services/routemaker/
+    delete: yes
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=data/*.db"
+      - "--exclude=.git"
+      - "--exclude=.gitignore"
+
+- name: Ensure data directory has correct permissions
+  file:
+    path: /opt/services/routemaker/data
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Check if RouteMaker database exists
+  stat:
+    path: /opt/services/routemaker/data/routemaker.db
+  register: routemaker_db
+
+- name: Display RouteMaker setup message
+  debug:
+    msg:
+      - "RouteMaker application files deployed to /opt/services/routemaker"
+      - "Access at: https://maker.{{ domain_name }}"
+      - ""
+      - "⚠️  Create users with: docker exec -it routemaker node manage-users.js create"
+      - "List users: docker exec -it routemaker node manage-users.js list"
+  when: not routemaker_db.stat.exists

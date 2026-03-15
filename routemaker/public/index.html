@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RouteMaker</title>
+    <link rel="stylesheet" href="/lib/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen active">
+        <div class="login-box">
+            <h1>🗺️ RouteMaker</h1>
+            <p class="subtitle">Collaborative Route Building</p>
+            <form id="login-form">
+                <input type="text" id="username" placeholder="Username" autocomplete="username" required>
+                <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+                <button type="submit">Sign In</button>
+            </form>
+            <div id="login-error" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app-screen" class="screen">
+        <!-- Main Container - Full screen map -->
+        <div class="main-container">
+            <!-- Map Container -->
+            <main class="map-container">
+                <div id="map"></div>
+                
+                <div id="drawing-status" class="drawing-status"></div>
+            </main>
+
+            <!-- Footer Toolbar -->
+            <footer class="footer-toolbar">
+                <!-- Large Warning Button -->
+                <button id="add-warning-btn" class="footer-btn footer-btn-warning" title="Add Warning Point">
+                    <img src="/icons/alert-triangle.svg" alt="Warning" width="40" height="40">
+                    <span>Add Warning</span>
+                </button>
+
+                <!-- Action Buttons Row -->
+                <div class="footer-actions">
+                    <button id="draw-route-btn" class="footer-action-btn" title="Draw Route">
+                        <img src="/icons/pencil.svg" alt="Draw" width="40" height="40">
+                    </button>
+                    <button id="record-route-btn" class="footer-action-btn" title="Record Route">
+                        <img src="/icons/point.svg" alt="Record" width="40" height="40">
+                    </button>
+                    <button id="locate-me-btn" class="footer-action-btn" title="My Location">
+                        <img src="/icons/current-location.svg" alt="Location" width="40" height="40">
+                    </button>
+                    <button id="routes-menu-btn" class="footer-action-btn" title="View Routes">
+                        <img src="/icons/route.svg" alt="Routes" width="40" height="40">
+                    </button>
+                    <button id="user-menu-btn" class="footer-action-btn" title="User Menu">
+                        <img src="/icons/user.svg" alt="User" width="40" height="40">
+                    </button>
+                    <button id="stop-drawing-btn" class="footer-action-btn" title="Finish" style="display: none;">
+                        <img src="/icons/square.svg" alt="Stop" width="40" height="40">
+                    </button>
+                    <button id="cancel-drawing-btn" class="footer-action-btn" title="Cancel" style="display: none;">
+                        <img src="/icons/x.svg" alt="Cancel" width="40" height="40">
+                    </button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Routes Modal -->
+    <div id="routes-modal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>
+                    <img src="/icons/route.svg" alt="" width="24" height="24" style="display:inline; vertical-align: middle; margin-right: 0.5rem;">
+                    All Routes
+                </h2>
+                <button class="close-modal-btn" data-modal="routes-modal">
+                    <img src="/icons/x.svg" alt="Close" width="24" height="24">
+                </button>
+            </div>
+            <div id="routes-list" class="routes-list"></div>
+        </div>
+    </div>
+
+    <!-- User Menu Modal -->
+    <div id="user-menu-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>
+                    <img src="/icons/user.svg" alt="" width="24" height="24" style="display:inline; vertical-align: middle; margin-right: 0.5rem;">
+                    Account
+                </h2>
+                <button class="close-modal-btn" data-modal="user-menu-modal">
+                    <img src="/icons/x.svg" alt="Close" width="24" height="24">
+                </button>
+            </div>
+            <div id="user-info" class="user-info-content"></div>
+            <div class="modal-buttons">
+                <button id="logout-btn" class="btn-danger btn-block">Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Route Form Modal -->
+    <div id="route-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modal-title">Save Route</h2>
+            <form id="route-form">
+                <label for="route-name">Name *</label>
+                <input type="text" id="route-name" required maxlength="100">
+                
+                <label for="route-description">Description</label>
+                <textarea id="route-description" rows="3" maxlength="500"></textarea>
+                
+                <div class="modal-buttons">
+                    <button type="button" id="cancel-modal-btn" class="btn-secondary">Cancel</button>
+                    <button type="submit" class="btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Route Details Modal -->
+    <div id="details-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="details-title"></h2>
+            <div id="details-content"></div>
+            <div class="modal-buttons">
+                <button id="export-geojson-btn" class="btn-secondary">Export GeoJSON</button>
+                <button id="export-gpx-btn" class="btn-secondary">Export GPX</button>
+                <button id="edit-route-btn" class="btn-primary">Edit Waypoints</button>
+                <button id="delete-route-btn" class="btn-danger">Delete</button>
+                <button id="close-details-btn" class="btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Warning Point Modal -->
+    <div id="warning-modal" class="modal">
+        <div class="modal-content">
+            <h2>
+                <img src="/icons/alert-triangle.svg" alt="" width="24" height="24" style="display:inline; vertical-align: middle; margin-right: 0.5rem; filter: invert(1);">
+                Add Warning Point
+            </h2>
+            <form id="warning-form">
+                <label for="warning-description">Description (optional)</label>
+                <textarea id="warning-description" rows="3" maxlength="200" placeholder="Add details about this warning point..."></textarea>
+                
+                <div class="modal-buttons">
+                    <button type="button" id="cancel-warning-btn" class="btn-secondary">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Warning</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Route Modal -->
+    <!-- Edit Panel (Bottom Sticky) -->
+    <div id="edit-panel" class="edit-panel">
+        <div class="edit-panel-content">
+            <div class="edit-panel-info">
+                <h3>📝 Editing Waypoints</h3>
+                <div class="edit-help">
+                    <span>Drag to move</span> • 
+                    <span>Click map to add</span> • 
+                    <span>Right-click to remove</span>
+                </div>
+            </div>
+            <div class="edit-panel-buttons">
+                <button id="cancel-edit-btn" class="btn-secondary">Cancel</button>
+                <button id="save-edit-btn" class="btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/lib/leaflet/leaflet.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>

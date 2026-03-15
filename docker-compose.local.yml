@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  routemaker:
+    build:
+      context: ./routemaker
+      dockerfile: Dockerfile
+    container_name: routemaker-local
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - SESSION_SECRET=local-dev-secret-change-in-production
+    volumes:
+      - ./routemaker/data:/app/data
+      - ./routemaker/public:/app/public:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

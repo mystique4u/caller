@@ -59,6 +59,10 @@
       include_tasks: tasks/matrix.yml
       tags: ['matrix', 'synapse']
 
+    - name: Deploy RouteMaker application
+      include_tasks: tasks/routemaker.yml
+      tags: ['routemaker']
+
     - name: Deploy and manage services
       include_tasks: tasks/services.yml
       tags: ['services', 'docker-compose']
