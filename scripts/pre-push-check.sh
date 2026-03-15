@@ -91,18 +91,16 @@ fi
 echo ""
 echo "🔍 Validating Ansible syntax..."
 if command -v ansible-playbook &> /dev/null; then
-  ANSIBLE_FAILED=0
-  for playbook in ansible/*.yml; do
-    if [ -f "$playbook" ]; then
-      if ansible-playbook --syntax-check "$playbook" > /dev/null 2>&1; then
-        check_result "$(basename $playbook)"
-      else
-        ((ANSIBLE_FAILED++))
-      fi
+  if [ -f "ansible/playbook.yml" ]; then
+    if ansible-playbook --syntax-check ansible/playbook.yml > /dev/null 2>&1; then
+      check_result "playbook.yml"
+    else
+      echo -e "${RED}❌ playbook.yml syntax check failed${NC}"
+      ((CHECKS_FAILED++))
     fi
-  done
-  if [ $ANSIBLE_FAILED -gt 0 ]; then
-    echo -e "${RED}❌ $ANSIBLE_FAILED Ansible playbooks failed syntax check${NC}"
+  else
+    echo -e "${RED}❌ ansible/playbook.yml not found${NC}"
+    ((CHECKS_FAILED++))
   fi
 else
   echo -e "${YELLOW}⚠️  Ansible not installed - skipping syntax check${NC}"
