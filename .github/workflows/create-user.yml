@@ -1,4 +1,4 @@
-name: Create User (Matrix + Jitsi)
+name: Create User (Matrix + Jitsi + RouteMaker)
 
 on:
   workflow_dispatch:
@@ -17,6 +17,9 @@ on:
         default: false
         type: boolean
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   get-server-ip:
     name: Get Server IP from Terraform
@@ -26,10 +29,10 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.9.0
           terraform_wrapper: false
@@ -48,7 +51,7 @@ jobs:
           echo "✅ Server IP retrieved: $SERVER_IP"
 
   create-user:
-    name: Create User for Matrix and Jitsi
+    name: Create User for Matrix, Jitsi and RouteMaker
     runs-on: ubuntu-latest
     needs: get-server-ip
     # Only allow repository owners/maintainers to trigger this workflow
@@ -99,15 +102,20 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          # Create Matrix user (pass variables via SSH)
+          # Create Matrix user with error handling for existing users
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "docker exec matrix-synapse register_new_matrix_user \
               -u \"${USERNAME}\" \
               -p \"${PASSWORD}\" \
               ${ADMIN_FLAG} \
               -c /data/homeserver.yaml \
-              http://localhost:8008 && \
-            echo '✅ Matrix ${USER_TYPE} user created successfully: @${USERNAME}:${DOMAIN_NAME}'"
+              http://localhost:8008 2>&1" && \
+            echo "✅ Matrix ${USER_TYPE} user created: @${USERNAME}:${DOMAIN_NAME}" || \
+            if echo "$?" | grep -q "User ID already taken"; then \
+              echo "⏭️  Matrix user already exists: @${USERNAME}:${DOMAIN_NAME}"; \
+            else \
+              echo "⏭️  Matrix user creation skipped (may already exist): @${USERNAME}:${DOMAIN_NAME}"; \
+            fi
 
       - name: Create Jitsi User
         env:
@@ -117,12 +125,26 @@ jobs:
         run: |
           echo "🔧 Creating Jitsi user..."
           
-          # Create Jitsi user (pass variables via SSH)
+          # Create Jitsi user with error handling for existing users
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "docker exec jitsi-prosody prosodyctl \
               --config /config/prosody.cfg.lua \
-              register \"${USERNAME}\" auth.meet.jitsi \"${PASSWORD}\" && \
-            echo '✅ Jitsi user created successfully: ${USERNAME}@auth.meet.jitsi'"
+              register \"${USERNAME}\" auth.meet.jitsi \"${PASSWORD}\" 2>&1" && \
+            echo "✅ Jitsi user created: ${USERNAME}@auth.meet.jitsi" || \
+            echo "⏭️  Jitsi user creation skipped (may already exist): ${USERNAME}@auth.meet.jitsi"
+
+      - name: Create RouteMaker User
+        env:
+          USERNAME: ${{ github.event.inputs.username }}
+          PASSWORD: ${{ github.event.inputs.password }}
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          echo "🔧 Creating RouteMaker user..."
+          
+          # Create RouteMaker user with --skip-if-exists flag
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "cd /opt/services/routemaker && \
+            docker exec routemaker node manage-users.js create \"${USERNAME}\" \"${PASSWORD}\" --skip-if-exists"
 
       - name: Summary
         env:
@@ -150,9 +172,15 @@ jobs:
           echo "  Full ID: [HIDDEN]@auth.meet.jitsi"
           echo "  Meeting URL: https://meet.${DOMAIN_NAME}"
           echo ""
+          echo "🗺️  RouteMaker Account:"
+          echo "  Username: [HIDDEN]"
+          echo "  App URL: https://maker.${DOMAIN_NAME}"
+          echo "  Color: Random (assigned automatically)"
+          echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📧 Credentials have been created and should be"
           echo "   shared with the user via a secure channel."
           echo "  Matrix: https://chat.${DOMAIN_NAME}"
           echo "  Jitsi: https://meet.${DOMAIN_NAME}"
+          echo "  RouteMaker: https://maker.${DOMAIN_NAME}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,0 +1,152 @@
+---
+# Service Deployment and Health Checks
+- name: Create Docker Compose file
+  template:
+    src: docker-compose.yml.j2
+    dest: /opt/services/docker-compose.yml
+    mode: '0644'
+
+- name: Pull and start Docker services
+  shell: |
+    cd /opt/services
+    docker compose pull --ignore-pull-failures || true
+    docker compose down || true
+    docker compose up -d
+  args:
+    executable: /bin/bash
+  retries: 3
+  delay: 10
+  register: docker_result
+  until: docker_result.rc == 0
+
+- name: Verify Docker containers are running
+  shell: docker ps --filter "status=running" | grep -E "traefik|matrix|element" | wc -l
+  register: running_containers
+  changed_when: false
+  failed_when: false
+
+- name: Display deployment status
+  debug:
+    msg:
+      - "Docker Compose deployment completed"
+      - "Running containers: {{ running_containers.stdout }}"
+      - ""
+      - "⚠️  Services may take 3-5 minutes to fully initialize"
+      - "Run health checks after deployment: ssh root@server './health-check.sh'"
+      - "Or use: scripts/health-check.sh (remotely)"
+
+- name: Create Jitsi admin user
+  shell: |
+    docker exec jitsi-web sed -i "s/config.hosts.authdomain = 'meet.jitsi';/config.hosts.authdomain = 'auth.meet.jitsi';/g" /config/config.js 2>/dev/null || true
+    docker exec jitsi-web nginx -s reload 2>/dev/null || true
+    sleep 5
+    docker exec jitsi-prosody prosodyctl --config /config/prosody.cfg.lua register {{ jitsi_admin_user }} auth.meet.jitsi {{ jitsi_admin_password }}
+  register: create_user_result
+  until: create_user_result.rc == 0 or 'already registered' in (create_user_result.stdout + create_user_result.stderr)
+  retries: 3
+  delay: 10
+  failed_when: false
+  changed_when: "'already registered' not in (create_user_result.stdout + create_user_result.stderr)"
+  when: jitsi_admin_user is defined and jitsi_admin_password is defined
+
+- name: Create Matrix admin user
+  shell: |
+    docker exec matrix-synapse register_new_matrix_user -u {{ matrix_admin_user }} -p {{ matrix_admin_password }} --admin -c /data/homeserver.yaml http://localhost:8008
+  register: matrix_user_result
+  until: matrix_user_result.rc == 0 or 'User ID already taken' in matrix_user_result.stdout
+  retries: 3
+  delay: 10
+  failed_when: false
+  changed_when: "'User ID already taken' not in matrix_user_result.stdout and matrix_user_result.rc == 0"
+  when: matrix_admin_user is defined and matrix_admin_password is defined
+
+- name: Copy health check script to server
+  copy:
+    src: "{{ playbook_dir }}/../scripts/health-check.sh"
+    dest: /opt/services/health-check.sh
+    mode: '0755'
+
+- name: Quick deployment status check
+  shell: |
+    echo "=== Quick Deployment Status ==="
+    echo "Containers running:"
+    docker ps | grep -E "traefik|matrix|element|livekit|jitsi|routemaker" | awk '{print $NF}' || echo "None found"
+    echo ""
+    echo "Configuration files:"
+    test -f /opt/services/well-known/matrix/client && echo "✓ .well-known/matrix/client" || echo "✗ Missing"
+    test -f /opt/services/well-known/matrix/server && echo "✓ .well-known/matrix/server" || echo "✗ Missing"
+    echo ""
+    echo "RouteMaker application:"
+    test -d /opt/services/routemaker && echo "✓ Application deployed" || echo "✗ Not deployed"
+    docker exec routemaker node -v 2>/dev/null && echo "✓ Node.js runtime OK" || echo "✗ Container not ready"
+    curl -s -o /dev/null -w "HTTP %{http_code}" http://localhost:3000 2>/dev/null && echo " (responded)" || echo " (no response)"
+    echo ""
+    echo "Note: Services initializing, may take 3-5 minutes to be fully ready"
+  register: health_check
+  changed_when: false
+  ignore_errors: yes
+
+- name: Display health check results
+  debug:
+    msg: "{{ health_check.stdout_lines }}"
+  when: health_check is defined
+
+- name: Display admin credentials
+  debug:
+    msg:
+      - "=========================================="
+      - "Services Admin Access"
+      - "=========================================="
+      - "Jitsi Meet: https://meet.{{ domain_name }}"
+      - "  Username: {{ jitsi_admin_user }}@auth.meet.jitsi"
+      - "  Password: (stored in GitHub Secrets)"
+      - ""
+      - "Matrix/Element: https://chat.{{ domain_name }}"
+      - "  Username: @{{ matrix_admin_user }}:{{ domain_name }}"
+      - "  Password: (stored in GitHub Secrets)"
+      - "  Homeserver: https://matrix.{{ domain_name }}"
+      - ""
+      - "RouteMaker: https://maker.{{ domain_name }}"
+      - "  Create users: docker exec -it routemaker node manage-users.js create"
+      - "  List users: docker exec -it routemaker node manage-users.js list"
+      - "  Or use GitHub Actions: Create User workflow"
+      - "=========================================="
+  when: jitsi_admin_user is defined or matrix_admin_user is defined
+  ignore_errors: yes
+
+- name: Display WireGuard status
+  command: wg show
+  register: wg_status
+  changed_when: false
+  failed_when: false
+
+- name: Show server information with domain
+  debug:
+    msg:
+      - "=============================================="
+      - "VPN and Services Server Deployment Complete!"
+      - "=============================================="
+      - "Domain: {{ domain_name }}"
+      - "Server IP: {{ server_ip }}"
+      - ""
+      - "Services:"
+      - "  - Traefik Dashboard: https://{{ domain_name }}:8080/dashboard/"
+      - "  - WireGuard UI: https://vpn.{{ domain_name }}"
+      - "  - Jitsi Meet: https://meet.{{ domain_name }}"
+      - "  - Element Chat: https://chat.{{ domain_name }}"
+      - "  - Matrix Homeserver: https://matrix.{{ domain_name }}"
+      - "  - RouteMaker: https://maker.{{ domain_name }}"
+      - ""
+      - "⚠️  IMPORTANT: Services are starting, wait 3-5 minutes"
+      - ""
+      - "Health Check Commands:"
+      - "  ssh root@{{ server_ip }} 'bash /opt/services/health-check.sh'"
+      - "  (or use scripts/health-check.sh from your local machine)"
+      - ""
+      - "DNS Configuration:"
+      - "  Update your domain's nameservers to:"
+      - "    - hydrogen.ns.hetzner.com"
+      - "    - oxygen.ns.hetzner.com"
+      - "    - helium.ns.hetzner.de"
+      - ""
+      - "=============================================="

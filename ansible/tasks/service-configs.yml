@@ -1,0 +1,4 @@
+---
+# Service Configuration Tasks
+# LiveKit, TURN, and RTC services removed for simplicity
+# Using Jitsi for video calls instead
