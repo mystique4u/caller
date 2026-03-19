@@ -254,7 +254,7 @@ resource "hcloud_zone_record" "spf" {
   zone  = data.hcloud_zone.domain[0].name
   name  = "@"
   type  = "TXT"
-  value = "v=spf1 mx ip4:${hcloud_server.vm.ipv4_address} ~all"
+  value = "\"v=spf1 mx ip4:${hcloud_server.vm.ipv4_address} ~all\""
 }
 
 # DMARC Record for email policy
@@ -263,7 +263,7 @@ resource "hcloud_zone_record" "dmarc" {
   zone  = data.hcloud_zone.domain[0].name
   name  = "_dmarc"
   type  = "TXT"
-  value = "v=DMARC1; p=quarantine; rua=mailto:postmaster@${var.domain_name}; pct=100; adkim=s; aspf=s"
+  value = "\"v=DMARC1; p=quarantine; rua=mailto:postmaster@${var.domain_name}; pct=100; adkim=s; aspf=s\""
 }
 
 # Note: DKIM record will be generated after mail server deployment
