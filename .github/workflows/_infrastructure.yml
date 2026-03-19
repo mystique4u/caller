@@ -172,16 +172,38 @@ jobs:
           
           echo "✅ DKIM key extracted successfully"
           
-          # Extract just the key value (v=DKIM1; k=rsa; p=...)
-          DKIM_VALUE=$(echo "$DKIM_RECORD" | grep -o 'v=DKIM1.*' | sed 's/[[:space:]]*$//' | tr -d '\n' | sed 's/" *"//g')
+          echo "Raw DKIM record:"
+          echo "$DKIM_RECORD"
+          echo ""
+          
+          # Extract and clean the DKIM value properly
+          # The record format is: mail._domainkey IN TXT ( "v=DKIM1; ..." "p=..." )
+          # We need to extract everything between the parentheses, remove quotes and join
+          DKIM_VALUE=$(echo "$DKIM_RECORD" | \
+            sed -n '/v=DKIM1/,/)/p' | \
+            tr -d '\n\t\r"()' | \
+            sed 's/mail\._domainkey.*TXT//g' | \
+            sed 's/IN//g' | \
+            sed 's/[[:space:]]\+/ /g' | \
+            sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           
           if [ -z "$DKIM_VALUE" ]; then
             echo "❌ Failed to parse DKIM value"
+            echo "Raw record: $DKIM_RECORD"
             exit 0
           fi
           
-          echo "📝 DKIM value: ${DKIM_VALUE:0:50}..."
+          # Validate it starts with v=DKIM1
+          if ! echo "$DKIM_VALUE" | grep -q "^v=DKIM1"; then
+            echo "❌ Parsed value doesn't start with v=DKIM1"
+            echo "Parsed: $DKIM_VALUE"
+            exit 0
+          fi
           
+          echo "📝 DKIM value parsed successfully"
+          echo "Length: ${#DKIM_VALUE} characters"
+          echo "Preview: ${DKIM_VALUE:0:80}..."
+          echo ""
           # Get zone ID
           echo "🌐 Getting DNS zone ID..."
           ZONE_RESPONSE=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
@@ -197,14 +219,23 @@ jobs:
           
           echo "✅ Found zone ID: $ZONE_ID"
           
-          # Update DKIM record via Hetzner Cloud API
+          # Update DKIM record via Hetzner Cloud API using jq for proper JSON encoding
           echo "🔄 Updating DKIM DNS record..."
+          
+          # Create JSON payload using jq to properly escape values
+          JSON_PAYLOAD=$(jq -n \
+            --arg value "$DKIM_VALUE" \
+            '{records: [{content: $value}]}')
+          
+          echo "JSON payload: $JSON_PAYLOAD"
           
           UPDATE_RESPONSE=$(curl -s -X PUT \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            -d "{\"records\":[{\"content\":\"\\\"$DKIM_VALUE\\\"\"}]}" \
+            -d "$JSON_PAYLOAD" \
             "https://api.hetzner.cloud/v1/zones/$ZONE_ID/rrsets/mail._domainkey/TXT")
+          
+          echo "API Response: $UPDATE_RESPONSE"
           
           if echo "$UPDATE_RESPONSE" | jq -e '.rrset' > /dev/null 2>&1; then
             echo "✅ DKIM DNS record updated successfully!"
