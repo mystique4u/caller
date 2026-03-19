@@ -921,6 +921,12 @@ jobs:
           COMMIT_MSG="${{ github.event.head_commit.message }}"
           ACTOR="${{ github.actor }}"
           WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          REPOSITORY="${{ github.repository }}"
+          BRANCH="${{ github.ref_name }}"
+          CODE_QUALITY="${{ needs.code-quality.result || 'skipped' }}"
+          TERRAFORM_RESULT="${{ needs.terraform.result || needs.terraform-auto.result }}"
+          ANSIBLE_RESULT="${{ needs.ansible.result }}"
+          HEALTH_CHECK_RESULT="${{ needs.health-check.result }}"
           
           # Determine deployment status
           DEPLOY_STATUS="✅ SUCCESS"
@@ -931,90 +937,87 @@ jobs:
             DEPLOY_STATUS="⚠️ PARTIAL - Health check issues"
           fi
           
-          # Create report
-          cat > /tmp/deployment-report.txt << EOF
-Deployment Report - $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Deployment Status: $DEPLOY_STATUS
-Domain: $DOMAIN
-Server IP: $SERVER_IP
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📦 Deployment Details
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Repository: ${{ github.repository }}
-Branch: ${{ github.ref_name }}
-Commit: ${COMMIT_SHA:0:8}
-Commit Message: $COMMIT_MSG
-Triggered By: $ACTOR
-Workflow: $WORKFLOW_URL
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🌐 Service URLs
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔐 WireGuard VPN:     https://vpn.$DOMAIN
-📹 Jitsi Meet:        https://meet.$DOMAIN
-💬 Matrix Synapse:    https://matrix.$DOMAIN
-🗨️  Element Web:       https://chat.$DOMAIN
-🗺️  RouteMaker:        https://maker.$DOMAIN
-📧 SMTP Server:       mail.$DOMAIN:587 (STARTTLS)
-📊 Traefik Dashboard: https://$DOMAIN:8080/dashboard/
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📧 SMTP Server Status
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ DNS Records Created:
-   - A Record:    mail.$DOMAIN → $SERVER_IP
-   - MX Record:   Priority 10 → mail.$DOMAIN
-   - SPF Record:  v=spf1 mx ip4:$SERVER_IP ~all
-   - DMARC:       Policy: quarantine
-
-⚠️  DKIM Record - Manual Setup Required:
-   Run on server: /opt/services/mailserver/generate-dkim.sh
-   Then add the TXT record to DNS:
-   Host: mail._domainkey.$DOMAIN
-
-📋 SMTP Connection Details:
-   Host: mail.$DOMAIN
-   Port: 587 (STARTTLS recommended) or 465 (SSL/TLS)
-   Auth: Required
-   User: noreply@$DOMAIN (created)
-   
-📖 Full Guide: docs/SMTP_GUIDE.md
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️  Important Notes
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. SSL certificates may take 5-10 minutes to provision
-2. Ensure DNS nameservers are set to:
-   - hydrogen.ns.hetzner.com
-   - oxygen.ns.hetzner.com
-   - helium.ns.hetzner.de
-3. DKIM record must be added manually (see SMTP section above)
-4. SPF, DMARC records are automatically created
-5. Test email deliverability with mail-tester.com
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 Job Status Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Code Quality:    ${{ needs.code-quality.result || 'skipped' }}
-Terraform:       ${{ needs.terraform.result || needs.terraform-auto.result }}
-Ansible:         ${{ needs.ansible.result }}
-Health Check:    ${{ needs.health-check.result }}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-This is an automated deployment notification.
-For support, check the workflow logs: $WORKFLOW_URL
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
+          # Create report using echo commands (avoids YAML heredoc parsing issues)
+          {
+            echo "Deployment Report - $(date -u +\"%Y-%m-%d %H:%M:%S UTC\")"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Deployment Status - $DEPLOY_STATUS"
+            echo "Domain - $DOMAIN"
+            echo "Server IP - $SERVER_IP" 
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📦 Deployment Details"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Repository - $REPOSITORY"
+            echo "Branch - $BRANCH"
+            echo "Commit - ${COMMIT_SHA:0:8}"
+            echo "Commit Message - $COMMIT_MSG"
+            echo "Triggered By - $ACTOR"
+            echo "Workflow - $WORKFLOW_URL"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🌐 Service URLs"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "🔐 WireGuard VPN - https://vpn.$DOMAIN"
+            echo "📹 Jitsi Meet - https://meet.$DOMAIN"
+            echo "💬 Matrix Synapse - https://matrix.$DOMAIN"
+            echo "🗨️  Element Web - https://chat.$DOMAIN"
+            echo "🗺️  RouteMaker - https://maker.$DOMAIN"
+            echo "📧 SMTP Server - mail.$DOMAIN:587"
+            echo "📊 Traefik Dashboard - https://$DOMAIN:8080/dashboard/"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📧 SMTP Server Status"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "✅ DNS Records Created"
+            echo "   - A Record - mail.$DOMAIN → $SERVER_IP"
+            echo "   - MX Record - Priority 10 → mail.$DOMAIN"
+            echo "   - SPF Record - v=spf1 mx ip4:$SERVER_IP ~all"
+            echo "   - DMARC - Policy quarantine"
+            echo ""
+            echo "⚠️  DKIM Record - Manual Setup Required"
+            echo "   Run on server - /opt/services/mailserver/generate-dkim.sh"
+            echo "   Then add the TXT record to DNS  "
+            echo "   Host - mail._domainkey.$DOMAIN"
+            echo ""
+            echo "📋 SMTP Connection Details"
+            echo "   Host - mail.$DOMAIN"
+            echo "   Port - 587 (STARTTLS) or 465 (SSL/TLS)"
+            echo "   Auth - Required"
+            echo "   User - noreply@$DOMAIN"
+            echo ""
+            echo "📖 Full Guide - docs/SMTP_GUIDE.md"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "⚠️  Important Notes"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "1. SSL certificates may take 5-10 minutes to provision"
+            echo "2. Ensure DNS nameservers are set to Hetzner"
+            echo "3. DKIM record must be added manually"
+            echo "4. SPF DMARC records are automatically created"
+            echo "5. Test email deliverability with mail-tester.com"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📊 Job Status Summary"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Code Quality - $CODE_QUALITY"
+            echo "Terraform - $TERRAFORM_RESULT"
+            echo "Ansible - $ANSIBLE_RESULT"
+            echo "Health Check - $HEALTH_CHECK_RESULT"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "This is an automated deployment notification"
+            echo "Workflow logs - $WORKFLOW_URL"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          } > /tmp/deployment-report.txt
           
           echo "✅ Deployment report prepared"
           
