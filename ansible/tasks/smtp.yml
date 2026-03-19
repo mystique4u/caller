@@ -181,33 +181,6 @@
           sys.exit(send_email(to_addr, subject, body_file, from_addr, smtp_pass))
     mode: '0755'
 
-- name: Install postfix for mail relay
-  package:
-    name: postfix
-    state: present
-  ignore_errors: yes
-
-- name: Configure host system to relay via mailserver
-  copy:
-    dest: /etc/postfix/main.cf
-    content: |
-      # Postfix main configuration for relaying via docker-mailserver
-      relayhost = [localhost]:25
-      smtp_use_tls = no
-      inet_interfaces = loopback-only
-      inet_protocols = ipv4
-    backup: yes
-  when: ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
-  notify: restart postfix
-  ignore_errors: yes
-
-- name: Ensure postfix is installed and running
-  systemd:
-    name: postfix
-    state: started
-    enabled: yes
-  ignore_errors: yes
-
 - name: Display SMTP setup instructions
   debug:
     msg:
