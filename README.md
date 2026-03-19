@@ -10,6 +10,7 @@ Fully automated deployment of **WireGuard VPN**, **Jitsi Meet video conferencing
 - ✅ **Matrix Synapse** - Private messaging with E2E encryption
 - ✅ **Element Web** - Modern Matrix web client
 - ✅ **RouteMaker** - Collaborative route building with real-time updates
+- ✅ **SMTP Mail Server** - Production-ready email with SPF/DKIM/DMARC
 - ✅ **Traefik** - Automatic HTTPS with Let's Encrypt
 - ✅ **Docker-based** - All services containerized
 - ✅ **Firewall Automated** - Created and managed by Terraform
@@ -28,6 +29,7 @@ All services accessible via HTTPS with your custom domain:
 | **Matrix Synapse**    | `https://matrix.yourdomain.com`          | Homeserver URL for clients               |
 | **Element Web**       | `https://chat.yourdomain.com`            | Matrix credentials from GitHub Secrets   |
 | **RouteMaker**        | `https://maker.yourdomain.com`           | Users created by admin via CLI           |
+| **SMTP Mail Server**  | `mail.yourdomain.com:587`                | Email accounts managed via CLI           |
 
 ## ⚡ Quick Start
 
@@ -101,6 +103,11 @@ Go to: `Settings` → `Secrets and variables` → `Actions` → `New repository 
 - **Matrix Synapse** - Homeserver with E2E encryption
 - **PostgreSQL 15** - Database for Matrix
 - **Element Web** - Matrix web client
+- **RouteMaker** - Collaborative mapping application
+- **docker-mailserver** - Full SMTP server with Postfix
+  - SPF, DKIM, DMARC email authentication
+  - TLS/SSL encryption with Let's Encrypt
+  - Fail2ban security protection
 
 ### Network Configuration
 
@@ -112,8 +119,11 @@ Go to: `Settings` → `Secrets and variables` → `Actions` → `New repository 
 
 ```
 Port 22    (TCP) - SSH
+Port 25    (TCP) - SMTP (mail server)
 Port 80    (TCP) - HTTP (redirects to HTTPS)
 Port 443   (TCP) - HTTPS (all services)
+Port 465   (TCP) - SMTPS (SSL/TLS)
+Port 587   (TCP) - SMTP Submission (STARTTLS)
 Port 8080  (TCP) - Traefik dashboard
 Port 10000 (UDP) - Jitsi video bridge
 Port 51820 (UDP) - WireGuard VPN
@@ -344,10 +354,13 @@ docker compose up -d
 - **[WireGuard VPN Guide](WIREGUARD_GUIDE.md)** - Complete VPN setup for all platforms
 - **[Jitsi Meet Guide](JITSI_GUIDE.md)** - Video conferencing setup and features
 - **[Matrix Guide](MATRIX_GUIDE.md)** - Messaging server and Element Web client
+- **[SMTP Mail Server Guide](docs/SMTP_GUIDE.md)** - Email server setup and configuration
+- **[RouteMaker Guide](docs/ROUTEMAKER_GUIDE.md)** - Collaborative mapping application
 
 ### Setup Documentation
 - **[GitHub Secrets Setup](docs/GITHUB_SECRETS.md)** - Required secrets configuration
 - **[Domain Setup](docs/DOMAIN_SETUP.md)** - DNS and domain configuration
+- **[SPF Records Guide](docs/SPF_RECORDS_GUIDE.md)** - Email authentication and deliverability
 - **[Terraform Cloud Setup](docs/terraform-cloud-setup.md)** - Terraform backend setup
 
 ### Infrastructure Details

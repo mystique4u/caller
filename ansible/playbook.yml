@@ -63,6 +63,10 @@
       include_tasks: tasks/routemaker.yml
       tags: ['routemaker']
 
+    - name: Configure SMTP mail server
+      include_tasks: tasks/smtp.yml
+      tags: ['smtp', 'mail']
+
     - name: Deploy and manage services
       include_tasks: tasks/services.yml
       tags: ['services', 'docker-compose']
