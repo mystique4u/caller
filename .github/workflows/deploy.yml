@@ -885,17 +885,15 @@ jobs:
           NOREPLY_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
           
           # Create the email account (skip if exists)
-          ssh -o StrictHostKeyChecking=no root@$SERVER_IP bash -s << EOF
-            # Check if mailserver is running
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP "
             if ! docker ps | grep mailserver > /dev/null; then
-              echo "⚠️  Mail server not running yet, skipping email setup"
+              echo '⚠️  Mail server not running yet, skipping email setup'
               exit 0
             fi
             
-            # Create noreply account
-            echo "Creating noreply@${DOMAIN}..."
-            docker exec mailserver setup email add "noreply@${DOMAIN}" "${NOREPLY_PASSWORD}" 2>&1 || echo "Account may already exist"
-EOF
+            echo 'Creating noreply@$DOMAIN...'
+            docker exec mailserver setup email add 'noreply@$DOMAIN' '$NOREPLY_PASSWORD' 2>&1 || echo 'Account may already exist'
+          "
           
           echo "✅ Email account configured"
           
@@ -906,12 +904,11 @@ EOF
           
           echo "🔐 Generating DKIM keys..."
           
-          ssh -o StrictHostKeyChecking=no root@$SERVER_IP bash -s << EOF
-            # Generate DKIM keys if not exists
-            if [ ! -f /opt/services/mailserver/config/opendkim/keys/${DOMAIN}/mail.txt ]; then
-              docker exec mailserver setup config dkim 2>&1 || echo "DKIM may already exist"
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP "
+            if [ ! -f /opt/services/mailserver/config/opendkim/keys/$DOMAIN/mail.txt ]; then
+              docker exec mailserver setup config dkim 2>&1 || echo 'DKIM may already exist'
             fi
-EOF
+          "
           
           echo "✅ DKIM keys ready"
           
@@ -1034,28 +1031,26 @@ EOF
           # Wait a bit more for mail server to fully initialize
           sleep 30
           
+          # Determine deployment status
+          DEPLOY_STATUS="SUCCESS"
+          if [ "$ANSIBLE_RESULT" != "success" ] || [ "$HEALTH_CHECK_RESULT" != "success" ]; then
+            DEPLOY_STATUS="PARTIAL"
+          fi
+          
           # Send email using swaks (Simple SMTP test tool)
-          ssh -o StrictHostKeyChecking=no root@$SERVER_IP bash -s << EOF
-            # Install swaks if not present
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP "
             if ! command -v swaks &> /dev/null; then
               apt-get update -qq && apt-get install -y -qq swaks libnet-ssleay-perl 2>&1 > /dev/null || true
             fi
             
-            # Send the email
-            DEPLOY_STATUS="SUCCESS"
-            if [ "${ANSIBLE_RESULT}" != "success" ] || [ "${HEALTH_CHECK_RESULT}" != "success" ]; then
-              DEPLOY_STATUS="PARTIAL"
-            fi
+            echo 'Deployment Status: $DEPLOY_STATUS'
+            echo 'Sending email from mail server...'
+            cat /tmp/deployment-report.txt 2>/dev/null || echo 'Report not found, sending basic notification'
             
-            # Note: Using localhost since we're on the mail server itself
-            echo "Sending email from mail server..."
-            cat /tmp/deployment-report.txt 2>/dev/null || echo "Report not found, sending basic notification"
-            
-            # For now, just confirm the setup - actual email sending will work once DKIM is configured
-            echo "✅ Mail server is ready to send emails"
-            echo "⚠️  Note: DKIM configuration required for optimal deliverability"
-            echo "📧 Run: /opt/services/mailserver/generate-dkim.sh"
-EOF
+            echo '✅ Mail server is ready to send emails'
+            echo '⚠️  Note: DKIM configuration required for optimal deliverability'
+            echo '📧 Run: /opt/services/mailserver/generate-dkim.sh'
+          "
           
           echo "✅ Deployment notification process completed"
           echo ""
