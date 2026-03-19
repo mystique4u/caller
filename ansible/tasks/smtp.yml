@@ -181,6 +181,41 @@
           sys.exit(send_email(to_addr, subject, body_file, from_addr, smtp_pass))
     mode: '0755'
 
+- name: Wait for mailserver container to be ready
+  shell: |
+    for i in {1..30}; do
+      if docker ps | grep mailserver | grep -q "healthy\|Up"; then
+        echo "Mailserver is ready"
+        exit 0
+      fi
+      sleep 2
+    done
+    echo "Mailserver not ready after 60 seconds"
+    exit 1
+  register: mailserver_status
+  ignore_errors: yes
+
+- name: Check if DKIM keys already exist
+  stat:
+    path: /opt/services/mailserver/config/opendkim/keys/{{ domain_name }}/mail.private
+  register: dkim_key_check
+
+- name: Generate DKIM keys (only if they don't exist)
+  shell: |
+    docker exec mailserver setup config dkim
+    sleep 2
+  when: 
+    - mailserver_status is succeeded
+    - not dkim_key_check.stat.exists
+  register: dkim_generation
+
+- name: Extract DKIM public key for DNS
+  shell: |
+    docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/{{ domain_name }}/mail.txt 2>/dev/null || echo "DKIM key not found"
+  register: dkim_public_key
+  when: mailserver_status is succeeded
+  ignore_errors: yes
+
 - name: Display SMTP setup instructions
   debug:
     msg:
@@ -188,43 +223,50 @@
       - "SMTP Mail Server Configuration"
       - "================================================================"
       - ""
-      - "The mail server has been configured at: mail.{{ domain_name }}"
+      - "Mail server: mail.{{ domain_name }}"
+      - "Server IP: {{ server_ip }}"
       - ""
-      - "IMPORTANT: DNS Records Required"
+      - "DNS Records Status"
       - "================================"
-      - ""
-      - "1. Add A record:"
-      - "   Host: mail.{{ domain_name }}"
-      - "   Value: {{ server_ip }}"
-      - ""
-      - "2. Add MX record:"
-      - "   Host: {{ domain_name }}"
-      - "   Priority: 10"
-      - "   Value: mail.{{ domain_name }}"
-      - ""
-      - "3. Add SPF record (TXT):"
-      - "   Host: {{ domain_name }}"
-      - "   Value: v=spf1 mx ip4:{{ server_ip }} ~all"
-      - ""
-      - "4. Generate and add DKIM record:"
-      - "   Run: ssh root@{{ server_ip }} '/opt/services/mailserver/generate-dkim.sh'"
-      - ""
-      - "5. Add DMARC record (TXT):"
-      - "   Host: _dmarc.{{ domain_name }}"
-      - "   Value: v=DMARC1; p=quarantine; rua=mailto:postmaster@{{ domain_name }}"
-      - ""
-      - "Email Account Management:"
-      - "========================="
-      - "Add noreply account:"
-      - "  ssh root@{{ server_ip }} '/opt/services/mailserver/setup-email.sh add noreply@{{ domain_name }}'"
+      - "✅ A record (mail.{{ domain_name }}) - Automated via Terraform"
+      - "✅ MX record (@) - Automated via Terraform"
+      - "✅ SPF record (@) - Automated via Terraform"
+      - "✅ DMARC record (_dmarc) - Automated via Terraform"
+      - "{% if dkim_generation is defined and dkim_generation is changed %}✅ DKIM keys - Generated (see below){% elif not dkim_key_check.stat.exists %}⚠️  DKIM keys - Not generated yet{% else %}✅ DKIM keys - Already exist (preserved){% endif %}"
       - ""
       - "SMTP Connection Details:"
       - "========================"
       - "Host: mail.{{ domain_name }}"
       - "Port: 587 (STARTTLS) or 465 (SSL/TLS)"
       - "Authentication: Required"
-      - "Username: noreply@{{ domain_name }}"
-      - "Password: (set during account creation)"
       - ""
-      - "See docs/SMTP_GUIDE.md for complete setup instructions"
+      - "Email Account Management:"
+      - "========================="
+      - "Accounts auto-created by deployment workflow"
+      - "Manual: /opt/services/mailserver/setup-email.sh add <email>"
+      - ""
+      - "See docs/SMTP_GUIDE.md for complete documentation"
       - "================================================================"
+
+- name: Display DKIM DNS record
+  debug:
+    msg:
+      - ""
+      - "================================================================"
+      - "⚠️  MANUAL ACTION REQUIRED: Add DKIM DNS Record"
+      - "================================================================"
+      - ""
+      - "{{ dkim_public_key.stdout }}"
+      - ""
+      - "Add this TXT record to your DNS (via Hetzner DNS):"
+      - "Host: mail._domainkey.{{ domain_name }}"
+      - "Type: TXT"
+      - "Value: Copy from above (v=DKIM1; k=rsa; p=...)"
+      - ""
+      - "Note: DKIM keys are persistent and backed up."
+      - "They will NOT regenerate on redeployment."
+      - "================================================================"
+  when: 
+    - dkim_public_key is defined
+    - dkim_public_key.stdout is defined
+    - "'DKIM' in dkim_public_key.stdout"
