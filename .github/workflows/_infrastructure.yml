@@ -152,63 +152,43 @@ jobs:
         id: dkim
         run: |
           echo "🔑 Extracting DKIM public key from mailserver..."
-          DKIM_KEY=$(ssh -o StrictHostKeyChecking=no root@${{ needs.terraform.outputs.server_ip }} "
-            docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/${{ secrets.DOMAIN_NAME }}/mail.txt 2>/dev/null | grep -o 'p=.*' | cut -d')' -f1
-          " || echo "")
+          DKIM_RECORD=$(ssh -o StrictHostKeyChecking=no root@${{ needs.terraform.outputs.server_ip }} "
+            docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/${{ secrets.DOMAIN_NAME }}/mail.txt 2>/dev/null || echo ''
+          ")
           
-          if [ -n "$DKIM_KEY" ]; then
+          if [ -n "$DKIM_RECORD" ]; then
             echo "✅ DKIM key extracted successfully"
-            echo "dkim_value=$DKIM_KEY" >> $GITHUB_OUTPUT
-            echo "dkim_exists=true" >> $GITHUB_OUTPUT
+            echo ""
+            echo "=========================================="
+            echo "⚠️  MANUAL STEP: Add DKIM DNS Record"
+            echo "=========================================="
+            echo ""
+            echo "Navigate to Hetzner DNS Console and add this TXT record:"
+            echo ""
+            echo "Host: mail._domainkey"
+            echo "Type: TXT"  
+            echo "TTL: 3600"
+            echo "Value:"
+            echo "$DKIM_RECORD"
+            echo ""
+            echo "Or use this Terraform resource (add to main.tf):"
+            echo ""
+            echo "resource \"hcloud_zone_record\" \"dkim\" {"
+            echo "  count = var.domain_name != \"\" ? 1 : 0"
+            echo "  zone  = data.hcloud_zone.domain[0].name"
+            echo "  name  = \"mail._domainkey\""
+            echo "  type  = \"TXT\""
+            echo "  value = \"$DKIM_RECORD\""
+            echo "}"
+            echo ""
+            echo "=========================================="
+            
+            # Save to file for future automation
+            echo "$DKIM_RECORD" | ssh -o StrictHostKeyChecking=no root@${{ needs.terraform.outputs.server_ip }} \
+              "cat > /opt/services/mailserver/dkim-public-key.txt"
+            echo "📝 DKIM key saved to server: /opt/services/mailserver/dkim-public-key.txt"
           else
             echo "⚠️  DKIM key not found (mailserver may still be starting)"
-            echo "dkim_exists=false" >> $GITHUB_OUTPUT
+            echo "💡 Run this command later to get DKIM key:"
+            echo "   ssh root@${{ needs.terraform.outputs.server_ip }} '/opt/services/mailserver/generate-dkim.sh'"
           fi
-      
-      - name: Create DKIM DNS record via Hetzner API
-        if: steps.dkim.outputs.dkim_exists == 'true'
-        env:
-          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
-        run: |
-          echo "🌐 Creating DKIM DNS record..."
-          
-          # Get zone ID
-          ZONE_ID=$(curl -s -H "Auth-API-Token: $HCLOUD_TOKEN" \
-            "https://dns.hetzner.com/api/v1/zones?name=$DOMAIN_NAME" | \
-            jq -r '.zones[0].id')
-          
-          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" = "null" ]; then
-            echo "❌ Could not find DNS zone for $DOMAIN_NAME"
-            exit 1
-          fi
-          
-          echo "Found zone ID: $ZONE_ID"
-          
-          # Check if DKIM record already exists
-          EXISTING_RECORD=$(curl -s -H "Auth-API-Token: $HCLOUD_TOKEN" \
-            "https://dns.hetzner.com/api/v1/records?zone_id=$ZONE_ID" | \
-            jq -r ".records[] | select(.name == \"mail._domainkey\" and .type == \"TXT\") | .id")
-          
-          DKIM_VALUE="v=DKIM1; k=rsa; ${{ steps.dkim.outputs.dkim_value }}"
-          
-          if [ -n "$EXISTING_RECORD" ] && [ "$EXISTING_RECORD" != "null" ]; then
-            echo "📝 Updating existing DKIM record (ID: $EXISTING_RECORD)"
-            curl -s -X PUT -H "Content-Type: application/json" \
-              -H "Auth-API-Token: $HCLOUD_TOKEN" \
-              -d "{\"value\":\"$DKIM_VALUE\",\"ttl\":3600,\"type\":\"TXT\",\"name\":\"mail._domainkey\",\"zone_id\":\"$ZONE_ID\"}" \
-              "https://dns.hetzner.com/api/v1/records/$EXISTING_RECORD"
-            echo "✅ DKIM DNS record updated"
-          else
-            echo "➕ Creating new DKIM record"
-            curl -s -X POST -H "Content-Type: application/json" \
-              -H "Auth-API-Token: $HCLOUD_TOKEN" \
-              -d "{\"value\":\"$DKIM_VALUE\",\"ttl\":3600,\"type\":\"TXT\",\"name\":\"mail._domainkey\",\"zone_id\":\"$ZONE_ID\"}" \
-              "https://dns.hetzner.com/api/v1/records"
-            echo "✅ DKIM DNS record created"
-          fi
-          
-          echo ""
-          echo "DKIM TXT record:"
-          echo "Host: mail._domainkey.$DOMAIN_NAME"
-          echo "Value: $DKIM_VALUE"
