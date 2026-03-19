@@ -35,9 +35,61 @@ jobs:
       - name: Check DNS resolution
         run: |
           echo "🔍 Checking DNS resolution..."
+          echo ""
+          echo "=== Service DNS Records ==="
           dig +short "${{ secrets.DOMAIN_NAME }}" || echo "⚠️ DNS not resolved yet"
           dig +short "vpn.${{ secrets.DOMAIN_NAME }}" || echo "⚠️ VPN DNS not resolved yet"
           dig +short "meet.${{ secrets.DOMAIN_NAME }}" || echo "⚠️ Meet DNS not resolved yet"
+          dig +short "mail.${{ secrets.DOMAIN_NAME }}" || echo "⚠️ Mail DNS not resolved yet"
+          
+          echo ""
+          echo "=== Email Authentication DNS Records ==="
+          
+          # Check MX record
+          echo "📧 MX Record:"
+          MX_RECORD=$(dig +short MX "${{ secrets.DOMAIN_NAME }}")
+          if [ -n "$MX_RECORD" ]; then
+            echo "✅ $MX_RECORD"
+          else
+            echo "❌ No MX record found"
+          fi
+          
+          # Check SPF record
+          echo ""
+          echo "🛡️ SPF Record:"
+          SPF_RECORD=$(dig +short TXT "${{ secrets.DOMAIN_NAME }}" | grep "v=spf1")
+          if [ -n "$SPF_RECORD" ]; then
+            echo "✅ $SPF_RECORD"
+          else
+            echo "❌ No SPF record found"
+          fi
+          
+          # Check DKIM record
+          echo ""
+          echo "🔑 DKIM Record:"
+          DKIM_RECORD=$(dig +short TXT "mail._domainkey.${{ secrets.DOMAIN_NAME }}")
+          if [ -n "$DKIM_RECORD" ]; then
+            if echo "$DKIM_RECORD" | grep -q "PLACEHOLDER"; then
+              echo "⚠️ DKIM record exists but contains placeholder (update in progress)"
+            else
+              echo "✅ DKIM record found: ${DKIM_RECORD:0:60}..."
+            fi
+          else
+            echo "❌ No DKIM record found (may take a few minutes to propagate)"
+          fi
+          
+          # Check DMARC record
+          echo ""
+          echo "📋 DMARC Record:"
+          DMARC_RECORD=$(dig +short TXT "_dmarc.${{ secrets.DOMAIN_NAME }}")
+          if [ -n "$DMARC_RECORD" ]; then
+            echo "✅ $DMARC_RECORD"
+          else
+            echo "❌ No DMARC record found"
+          fi
+          
+          echo ""
+          echo "=== DNS Check Complete ==="
       
       - name: Check HTTPS services
         run: |
@@ -65,6 +117,41 @@ jobs:
           echo "- **Element Web:** https://chat.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "- **RouteMaker:** https://maker.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "- **SMTP Server:** mail.${{ secrets.DOMAIN_NAME }}:587" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📧 Email Authentication Status" >> $GITHUB_STEP_SUMMARY
+          
+          # Check MX
+          if dig +short MX "${{ secrets.DOMAIN_NAME }}" | grep -q "."; then
+            echo "- ✅ **MX Record:** Configured" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **MX Record:** Not found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check SPF
+          if dig +short TXT "${{ secrets.DOMAIN_NAME }}" | grep -q "v=spf1"; then
+            echo "- ✅ **SPF Record:** Configured" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **SPF Record:** Not found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check DKIM
+          DKIM_CHECK=$(dig +short TXT "mail._domainkey.${{ secrets.DOMAIN_NAME }}")
+          if [ -n "$DKIM_CHECK" ]; then
+            if echo "$DKIM_CHECK" | grep -q "PLACEHOLDER"; then
+              echo "- ⚠️ **DKIM Record:** Placeholder (update in progress)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ✅ **DKIM Record:** Configured" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- ❌ **DKIM Record:** Not found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check DMARC
+          if dig +short TXT "_dmarc.${{ secrets.DOMAIN_NAME }}" | grep -q "v=DMARC1"; then
+            echo "- ✅ **DMARC Record:** Configured" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **DMARC Record:** Not found" >> $GITHUB_STEP_SUMMARY
+          fi
 
   send-notification:
     name: Send Deployment Report
