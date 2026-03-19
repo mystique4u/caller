@@ -224,8 +224,17 @@ jobs:
           EXISTING_RECORDS=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
             "https://api.hetzner.cloud/v1/zones/$ZONE_ID/records")
           
+          # Validate API response
+          if ! echo "$EXISTING_RECORDS" | jq -e '.records' > /dev/null 2>&1; then
+            echo "❌ Invalid API response when fetching records"
+            echo "Response: $EXISTING_RECORDS"
+            exit 0
+          fi
+          
+          echo "✅ Successfully fetched zone records"
+          
           # Check if DKIM record exists
-          DKIM_RECORD_ID=$(echo "$EXISTING_RECORDS" | jq -r ".records[] | select(.name == \"mail._domainkey\" and .type == \"TXT\") | .id // empty")
+          DKIM_RECORD_ID=$(echo "$EXISTING_RECORDS" | jq -r '.records[] | select(.name == "mail._domainkey" and .type == "TXT") | .id // empty')
           
           if [ -n "$DKIM_RECORD_ID" ]; then
             echo "📝 Found existing DKIM record (ID: $DKIM_RECORD_ID), updating..."
