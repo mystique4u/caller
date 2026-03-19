@@ -131,7 +131,7 @@ jobs:
             if [ -n '${{ secrets.EMAIL_ADDRESS }}' ] && [ '${{ inputs.send-email }}' = 'true' ]; then
               echo '📧 Sending deployment report to ${{ secrets.EMAIL_ADDRESS }}...'
               
-              # Use Python script for reliable email sending
+              # Send directly via mailserver container port (already exposed on host:25)
               FROM_EMAIL='noreply@${{ secrets.DOMAIN_NAME }}' \
               python3 /opt/services/mailserver/send-email.py \
                 '${{ secrets.EMAIL_ADDRESS }}' \
@@ -142,7 +142,8 @@ jobs:
                 echo '✅ Email sent successfully to ${{ secrets.EMAIL_ADDRESS }}'
               else
                 echo '⚠️  Email sending failed, but deployment was successful'
-                echo '⚠️  Check mailserver logs: docker logs mailserver'
+                echo '⚠️  Debug: Check if mailserver is running: docker ps | grep mailserver'
+                echo '⚠️  Debug: Check mailserver logs: docker logs mailserver'
               fi
             else
               echo '📧 Email notification skipped (EMAIL_ADDRESS not configured or send-email=false)'
