@@ -181,6 +181,12 @@
           sys.exit(send_email(to_addr, subject, body_file, from_addr, smtp_pass))
     mode: '0755'
 
+- name: Install postfix for mail relay
+  package:
+    name: postfix
+    state: present
+  ignore_errors: yes
+
 - name: Configure host system to relay via mailserver
   copy:
     dest: /etc/postfix/main.cf
@@ -193,6 +199,7 @@
     backup: yes
   when: ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
   notify: restart postfix
+  ignore_errors: yes
 
 - name: Ensure postfix is installed and running
   systemd:
