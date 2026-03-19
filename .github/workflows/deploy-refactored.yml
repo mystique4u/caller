@@ -1,9 +1,10 @@
-name: Deploy Infrastructure
+name: Deploy Infrastructure (Modular)
 
 on:
   push:
     branches:
       - main
+      - feature/smtp-server
     paths:
       - 'terraform/**'
       - 'ansible/**'
