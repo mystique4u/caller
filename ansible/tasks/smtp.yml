@@ -248,20 +248,25 @@
       - "See docs/SMTP_GUIDE.md for complete documentation"
       - "================================================================"
 
-- name: Display DKIM DNS record
+- name: Display DKIM DNS record status
   debug:
     msg:
       - ""
       - "================================================================"
-      - "⚠️  MANUAL ACTION REQUIRED: Add DKIM DNS Record"
+      - "✅ DKIM Key Generated Successfully"
       - "================================================================"
       - ""
+      - "DKIM public key extracted:"
       - "{{ dkim_public_key.stdout }}"
       - ""
-      - "Add this TXT record to your DNS (via Hetzner DNS):"
-      - "Host: mail._domainkey.{{ domain_name }}"
+      - "🤖 Automated DNS Update:"
+      - "The workflow will automatically update the DKIM DNS record"
+      - "via Hetzner Cloud API after this playbook completes."
+      - ""
+      - "Record: mail._domainkey.{{ domain_name }}"
       - "Type: TXT"
-      - "Value: Copy from above (v=DKIM1; k=rsa; p=...)"
+      - ""
+      - "✅ No manual action required!"
       - ""
       - "Note: DKIM keys are persistent and backed up."
       - "They will NOT regenerate on redeployment."
