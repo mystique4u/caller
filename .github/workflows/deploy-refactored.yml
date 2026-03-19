@@ -30,6 +30,11 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   TERRAFORM_VERSION: '1.6.0'
 
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
 jobs:
   # Run validation checks
   validation:
