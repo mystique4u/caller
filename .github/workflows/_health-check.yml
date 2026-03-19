@@ -87,11 +87,18 @@ jobs:
         run: |
           # Create noreply account and generate report
           ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} "
+            set -e
+            
             # Setup noreply email if mailserver is running
+            NOREPLY_PASS=''
             if docker ps | grep mailserver > /dev/null; then
-              PASS=\$(openssl rand -base64 24)
-              docker exec mailserver setup email add 'noreply@${{ secrets.DOMAIN_NAME }}' \"\$PASS\" 2>&1 || true
+              echo '📧 Setting up noreply email account...'
+              NOREPLY_PASS=\$(openssl rand -base64 24)
+              docker exec mailserver setup email add 'noreply@${{ secrets.DOMAIN_NAME }}' \"\$NOREPLY_PASS\" 2>&1 || true
               docker exec mailserver setup config dkim 2>&1 || true
+              echo 'NOREPLY_PASS='\$NOREPLY_PASS > /root/.noreply-credentials
+              chmod 600 /root/.noreply-credentials
+              echo '✅ Noreply account created'
             fi
             
             # Create deployment report
@@ -117,7 +124,27 @@ jobs:
           
           See docs/SMTP_GUIDE.md for details.
           REPORT
+            
+            echo '✅ Deployment report created'
+            
+            # Send email if configured
+            if [ -n '${{ secrets.EMAIL_ADDRESS }}' ] && [ '${{ inputs.send-email }}' = 'true' ]; then
+              echo '📧 Sending deployment report to ${{ secrets.EMAIL_ADDRESS }}...'
+              
+              # Use Python script for reliable email sending
+              FROM_EMAIL='noreply@${{ secrets.DOMAIN_NAME }}' \
+              python3 /opt/services/mailserver/send-email.py \
+                '${{ secrets.EMAIL_ADDRESS }}' \
+                'Deployment Report - ${{ secrets.DOMAIN_NAME }}' \
+                /tmp/deployment-report.txt
+              
+              if [ \$? -eq 0 ]; then
+                echo '✅ Email sent successfully to ${{ secrets.EMAIL_ADDRESS }}'
+              else
+                echo '⚠️  Email sending failed, but deployment was successful'
+                echo '⚠️  Check mailserver logs: docker logs mailserver'
+              fi
+            else
+              echo '📧 Email notification skipped (EMAIL_ADDRESS not configured or send-email=false)'
+            fi
           "
-          
-          echo "✅ Deployment report created"
-          echo "📧 Email notification configured for ${{ secrets.EMAIL_ADDRESS }}"
