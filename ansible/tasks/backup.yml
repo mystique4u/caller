@@ -38,8 +38,9 @@
       
       echo "� Backing up RouteMaker database..."
       tar -czf "${LOCAL_BACKUP_DIR}/routemaker-${BACKUP_DATE}.tar.gz" -C /opt/services/routemaker/data .
-      
-      echo "�📝 Creating backup manifest..."
+            echo "📧 Backing up mail server data..."
+      tar -czf "${LOCAL_BACKUP_DIR}/mailserver-${BACKUP_DATE}.tar.gz" -C /opt/services/mailserver .
+            echo "�📝 Creating backup manifest..."
       cat > "${LOCAL_BACKUP_DIR}/MANIFEST.txt" << EOF
       ==========================================
       BACKUP MANIFEST
