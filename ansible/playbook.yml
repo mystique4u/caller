@@ -75,3 +75,10 @@
       include_tasks: tasks/backup.yml
       tags: ['backup']
       when: lookup('env', 'STORAGEBOX_HOST') != ''
+
+  handlers:
+    - name: restart postfix
+      systemd:
+        name: postfix
+        state: restarted
+      ignore_errors: yes

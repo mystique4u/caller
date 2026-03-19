@@ -130,6 +130,77 @@
       fi
     mode: '0755'
 
+- name: Create email sending script
+  copy:
+    dest: /opt/services/mailserver/send-email.py
+    content: |
+      #!/usr/bin/env python3
+      """
+      Simple SMTP email sender using the local mailserver
+      Usage: ./send-email.py <to_address> <subject> <body_file>
+      """
+      import sys
+      import smtplib
+      from email.mime.text import MIMEText
+      from email.mime.multipart import MIMEMultipart
+      import os
+      
+      def send_email(to_addr, subject, body_file, from_addr, smtp_pass):
+          # Read body from file
+          with open(body_file, 'r') as f:
+              body = f.read()
+          
+          # Create message
+          msg = MIMEMultipart()
+          msg['From'] = from_addr
+          msg['To'] = to_addr
+          msg['Subject'] = subject
+          msg.attach(MIMEText(body, 'plain'))
+          
+          # Send via local mailserver on port 25 (local delivery, no auth needed)
+          try:
+              with smtplib.SMTP('localhost', 25) as server:
+                  server.send_message(msg)
+                  print(f"✅ Email sent successfully to {to_addr}")
+                  return 0
+          except Exception as e:
+              print(f"❌ Failed to send email: {e}")
+              return 1
+      
+      if __name__ == '__main__':
+          if len(sys.argv) != 4:
+              print("Usage: send-email.py <to_address> <subject> <body_file>")
+              sys.exit(1)
+          
+          to_addr = sys.argv[1]
+          subject = sys.argv[2]
+          body_file = sys.argv[3]
+          from_addr = os.environ.get('FROM_EMAIL', 'noreply@{{ domain_name }}')
+          smtp_pass = os.environ.get('SMTP_PASS', '')
+          
+          sys.exit(send_email(to_addr, subject, body_file, from_addr, smtp_pass))
+    mode: '0755'
+
+- name: Configure host system to relay via mailserver
+  copy:
+    dest: /etc/postfix/main.cf
+    content: |
+      # Postfix main configuration for relaying via docker-mailserver
+      relayhost = [localhost]:25
+      smtp_use_tls = no
+      inet_interfaces = loopback-only
+      inet_protocols = ipv4
+    backup: yes
+  when: ansible_facts['os_family'] == "RedHat" or ansible_facts['os_family'] == "Debian"
+  notify: restart postfix
+
+- name: Ensure postfix is installed and running
+  systemd:
+    name: postfix
+    state: started
+    enabled: yes
+  ignore_errors: yes
+
 - name: Display SMTP setup instructions
   debug:
     msg:
