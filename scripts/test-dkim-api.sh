@@ -19,8 +19,8 @@ echo ""
 echo "============================================"
 echo "Step 1: List all zones"
 echo "============================================"
-ZONES_RESPONSE=$(curl -s -H "Auth-API-Token: $HCLOUD_TOKEN" \
-  "https://dns.hetzner.com/api/v1/zones")
+ZONES_RESPONSE=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
+  "https://api.hetzner.cloud/v1/zones")
 
 echo "$ZONES_RESPONSE" | jq '.'
 echo ""
@@ -41,14 +41,14 @@ echo ""
 echo "============================================"
 echo "Step 2: List existing records in zone"
 echo "============================================"
-RECORDS_RESPONSE=$(curl -s -H "Auth-API-Token: $HCLOUD_TOKEN" \
-  "https://dns.hetzner.com/api/v1/records?zone_id=$ZONE_ID")
+RECORDS_RESPONSE=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
+  "https://api.hetzner.cloud/v1/zones/$ZONE_ID/rrsets?name=mail._domainkey&type=TXT")
 
 echo "$RECORDS_RESPONSE" | jq '.'
 echo ""
 
 # Check if DKIM record exists
-DKIM_RECORD_ID=$(echo "$RECORDS_RESPONSE" | jq -r '.records[] | select(.name == "mail._domainkey" and .type == "TXT") | .id // empty')
+DKIM_RECORD_ID=$(echo "$RECORDS_RESPONSE" | jq -r '.rrsets[] | select(.name == "mail._domainkey" and .type == "TXT") | .id // empty')
 
 if [ -n "$DKIM_RECORD_ID" ]; then
   echo "✅ Found existing DKIM record (ID: $DKIM_RECORD_ID)"
@@ -59,9 +59,9 @@ if [ -n "$DKIM_RECORD_ID" ]; then
   
   UPDATE_RESPONSE=$(curl -s -X PUT \
     -H "Content-Type: application/json" \
-    -H "Auth-API-Token: $HCLOUD_TOKEN" \
-    -d "{\"name\":\"mail._domainkey\",\"type\":\"TXT\",\"value\":\"$DKIM_VALUE\",\"ttl\":3600,\"zone_id\":\"$ZONE_ID\"}" \
-    "https://dns.hetzner.com/api/v1/records/$DKIM_RECORD_ID")
+    -H "Authorization: Bearer $HCLOUD_TOKEN" \
+    -d "{\"records\":[{\"value\":\"$DKIM_VALUE\"}],\"ttl\":3600}" \
+    "https://api.hetzner.cloud/v1/zones/$ZONE_ID/rrsets/$DKIM_RECORD_ID")
   
   echo "$UPDATE_RESPONSE" | jq '.'
   
@@ -81,9 +81,9 @@ else
   
   CREATE_RESPONSE=$(curl -s -X POST \
     -H "Content-Type: application/json" \
-    -H "Auth-API-Token: $HCLOUD_TOKEN" \
-    -d "{\"name\":\"mail._domainkey\",\"type\":\"TXT\",\"value\":\"$DKIM_VALUE\",\"ttl\":3600,\"zone_id\":\"$ZONE_ID\"}" \
-    "https://dns.hetzner.com/api/v1/records")
+    -H "Authorization: Bearer $HCLOUD_TOKEN" \
+    -d "{\"name\":\"mail._domainkey\",\"type\":\"TXT\",\"records\":[{\"value\":\"$DKIM_VALUE\"}],\"ttl\":3600}" \
+    "https://api.hetzner.cloud/v1/zones/$ZONE_ID/rrsets")
   
   echo "$CREATE_RESPONSE" | jq '.'
   
