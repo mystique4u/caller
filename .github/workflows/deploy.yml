@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/smtp-server
     paths:
       - 'terraform/**'
       - 'ansible/**'
