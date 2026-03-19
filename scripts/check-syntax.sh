@@ -109,3 +109,41 @@ fi
 
 echo ""
 echo -e "${GREEN}🎉 All syntax checks passed!${NC}"
+
+# 4. Check GitHub Actions workflows
+echo ""
+echo "🔄 Checking GitHub Actions workflows..."
+WORKFLOW_ERRORS=0
+for file in .github/workflows/*.yml; do
+    filename=$(basename "$file")
+    if python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
+        echo -e "${GREEN}✅ $filename${NC}"
+    else
+        echo -e "${RED}❌ $filename${NC}"
+        python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>&1 | head -5
+        WORKFLOW_ERRORS=1
+    fi
+done
+
+# Check composite actions
+for file in .github/actions/*/action.yml; do
+    if [ -f "$file" ]; then
+        filename=$(basename $(dirname "$file"))/action.yml
+        if python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
+            echo -e "${GREEN}✅ $filename${NC}"
+        else
+            echo -e "${RED}❌ $filename${NC}"
+            python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>&1 | head -5
+            WORKFLOW_ERRORS=1
+        fi
+    fi
+done
+
+if [ $WORKFLOW_ERRORS -eq 1 ]; then
+    echo ""
+    echo -e "${RED}❌ GitHub Actions workflow errors found${NC}"
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}🎉 All checks passed!${NC}"
