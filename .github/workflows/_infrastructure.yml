@@ -148,137 +148,38 @@ jobs:
           
           ansible-playbook -i inventory.ini playbook.yml -v $EXTRA_VARS
       
-      - name: Extract and update DKIM DNS record
+
+      - name: Extract DKIM public key and send via email
         env:
-          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           SERVER_IP: ${{ needs.terraform.outputs.server_ip }}
         run: |
           echo "🔑 Extracting DKIM public key from mailserver..."
-          
-          # Wait a bit for mailserver to fully start
           sleep 5
-          
-          # Extract DKIM record
-          DKIM_RECORD=$(ssh -o StrictHostKeyChecking=no root@$SERVER_IP "
-            docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/$DOMAIN_NAME/mail.txt 2>/dev/null || echo ''
-          ")
-          
+          DKIM_RECORD=$(ssh -o StrictHostKeyChecking=no root@$SERVER_IP "docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/$DOMAIN_NAME/mail.txt 2>/dev/null || echo ''")
           if [ -z "$DKIM_RECORD" ]; then
             echo "⚠️  DKIM key not found yet (mailserver may still be starting)"
-            echo "💡 DKIM placeholder record created - will be updated on next deployment"
             exit 0
           fi
-          
           echo "✅ DKIM key extracted successfully"
-          
-          echo "Raw DKIM record:"
-          echo "$DKIM_RECORD"
-          echo ""
-          
-          # Extract and clean the DKIM value properly
-          # The record format is: mail._domainkey IN TXT ( "v=DKIM1; ..." "p=..." )
-          # We need to extract everything between the parentheses, remove quotes and join
-          DKIM_VALUE=$(echo "$DKIM_RECORD" | \
-            sed -n '/v=DKIM1/,/)/p' | \
-            tr -d '\n\t\r"()' | \
-            sed 's/mail\._domainkey.*TXT//g' | \
-            sed 's/IN//g' | \
-            sed 's/[[:space:]]\+/ /g' | \
-            sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-          
-          if [ -z "$DKIM_VALUE" ]; then
-            echo "❌ Failed to parse DKIM value"
-            echo "Raw record: $DKIM_RECORD"
-            exit 0
-          fi
-          
-          # Validate it starts with v=DKIM1
-          if ! echo "$DKIM_VALUE" | grep -q "^v=DKIM1"; then
-            echo "❌ Parsed value doesn't start with v=DKIM1"
-            echo "Parsed: $DKIM_VALUE"
-            exit 0
-          fi
-          
-          echo "📝 DKIM value parsed successfully"
-          echo "Length: ${#DKIM_VALUE} characters"
-          echo "Preview: ${DKIM_VALUE:0:80}..."
-          echo ""
-          # Get zone ID
-          echo "🌐 Getting DNS zone ID..."
-          ZONE_RESPONSE=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            "https://api.hetzner.cloud/v1/zones?name=$DOMAIN_NAME")
-          
-          ZONE_ID=$(echo "$ZONE_RESPONSE" | jq -r '.zones[0].id // empty')
-          
-          if [ -z "$ZONE_ID" ]; then
-            echo "❌ Could not find DNS zone for $DOMAIN_NAME"
-            echo "Response: $ZONE_RESPONSE"
-            exit 0
-          fi
-          
-          echo "✅ Found zone ID: $ZONE_ID"
-          
-          # Get existing records to check if DKIM exists
-          echo "🔍 Checking existing DKIM record..."
-          EXISTING_RECORDS=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            "https://api.hetzner.cloud/v1/zones/$ZONE_ID/rrsets?name=mail._domainkey&type=TXT")
-          
-          # Validate API response
-          if ! echo "$EXISTING_RECORDS" | jq -e '.rrsets' > /dev/null 2>&1; then
-            echo "❌ Invalid API response when fetching records"
-            echo "Response: $EXISTING_RECORDS"
-            exit 0
-          fi
-          
-          echo "✅ Successfully fetched zone records"
-          
-          # Check if DKIM record exists
-          DKIM_RECORD_ID=$(echo "$EXISTING_RECORDS" | jq -r '.rrsets[] | select(.name == "mail._domainkey" and .type == "TXT") | .id // empty')
-          
-          if [ -n "$DKIM_RECORD_ID" ]; then
-            echo "📝 Found existing DKIM record (ID: $DKIM_RECORD_ID), updating..."
-            
-            # Update existing record
-            UPDATE_RESPONSE=$(curl -s -X PUT \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $HCLOUD_TOKEN" \
-              -d "{\"records\":[{\"value\":\"$DKIM_VALUE\"}],\"ttl\":3600}" \
-              "https://api.hetzner.cloud/v1/zones/$ZONE_ID/rrsets/$DKIM_RECORD_ID")
+          echo "Raw DKIM record:" >> /tmp/dkim-key.txt
+          echo "$DKIM_RECORD" >> /tmp/dkim-key.txt
+          echo "" >> /tmp/dkim-key.txt
+          echo "==========================================" >> /tmp/dkim-key.txt
+          echo "DKIM Record:" >> /tmp/dkim-key.txt
+          echo "==========================================" >> /tmp/dkim-key.txt
+          echo "Host: mail._domainkey.$DOMAIN_NAME" >> /tmp/dkim-key.txt
+          echo "Type: TXT" >> /tmp/dkim-key.txt
+          echo "Value: $DKIM_RECORD" >> /tmp/dkim-key.txt
+          echo "==========================================" >> /tmp/dkim-key.txt
+          if [ -n "$EMAIL_ADDRESS" ]; then
+            echo "📧 Sending DKIM key to $EMAIL_ADDRESS..."
+            echo "Subject: DKIM Key for $DOMAIN_NAME" > /tmp/dkim-mail.txt
+            echo "" >> /tmp/dkim-mail.txt
+            cat /tmp/dkim-key.txt >> /tmp/dkim-mail.txt
+            sendmail "$EMAIL_ADDRESS" < /tmp/dkim-mail.txt || echo "⚠️ Failed to send DKIM key via email"
+            echo "✅ DKIM key sent to $EMAIL_ADDRESS"
           else
-            echo "➕ Creating new DKIM record..."
-            
-            # Create new record
-            UPDATE_RESPONSE=$(curl -s -X POST \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $HCLOUD_TOKEN" \
-              -d "{\"name\":\"mail._domainkey\",\"type\":\"TXT\",\"records\":[{\"value\":\"$DKIM_VALUE\"}],\"ttl\":3600}" \
-              "https://api.hetzner.cloud/v1/zones/$ZONE_ID/rrsets")
+            echo "⚠️ EMAIL_ADDRESS not configured, DKIM key not sent via email"
           fi
-          
-          echo "API Response: $UPDATE_RESPONSE"
-          
-          if echo "$UPDATE_RESPONSE" | jq -e '.rrset' > /dev/null 2>&1; then
-            echo "✅ DKIM DNS record updated successfully!"
-            echo ""
-            echo "=========================================="
-            echo "DKIM Record Updated:"
-            echo "=========================================="
-            echo "Host: mail._domainkey.$DOMAIN_NAME"
-            echo "Type: TXT"
-            echo "Value: $DKIM_VALUE"
-            echo "=========================================="
-          else
-            echo "⚠️  Failed to update DKIM record via API"
-            echo "Response: $UPDATE_RESPONSE"
-            echo ""
-            echo "Manual fallback - Add this TXT record:"
-            echo "Host: mail._domainkey"
-            echo "Type: TXT"
-            echo "Value: $DKIM_VALUE"
-          fi
-          
-          # Save to server for reference
-          ssh -o StrictHostKeyChecking=no root@$SERVER_IP \
-            "echo '$DKIM_VALUE' > /opt/services/mailserver/dkim-public-key.txt"
-          echo "📝 DKIM key saved to server: /opt/services/mailserver/dkim-public-key.txt"
