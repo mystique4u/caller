@@ -266,9 +266,18 @@ resource "hcloud_zone_record" "dmarc" {
   value = "\"v=DMARC1; p=quarantine; rua=mailto:postmaster@${var.domain_name}; pct=100; adkim=s; aspf=s\""
 }
 
-# Note: DKIM record will be generated after mail server deployment
-# Use this command on the server to get DKIM record:
-# /opt/services/mailserver/generate-dkim.sh
+# DKIM Record (placeholder - will be updated by workflow after key generation)
+resource "hcloud_zone_record" "dkim" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "mail._domainkey"
+  type  = "TXT"
+  value = "\"v=DKIM1; k=rsa; p=PLACEHOLDER_WILL_BE_UPDATED_AFTER_DEPLOYMENT\""
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
 
 # Outputs
 output "public_ip" {
