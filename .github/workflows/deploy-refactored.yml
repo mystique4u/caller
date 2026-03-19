@@ -50,7 +50,7 @@ jobs:
     with:
       terraform-action: 'plan'
       terraform-version: '1.6.0'
-      server-location: ${{ secrets.TF_VAR_server_location || 'nbg1' }}
+      server-location: 'nbg1'
     secrets:
       TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
       HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
@@ -77,7 +77,6 @@ jobs:
     if: github.event_name == 'push'
     environment:
       name: production
-      url: https://${{ secrets.DOMAIN_NAME }}
     
     steps:
       - name: Waiting for approval
@@ -95,7 +94,7 @@ jobs:
     with:
       terraform-action: 'apply'
       terraform-version: '1.6.0'
-      server-location: ${{ secrets.TF_VAR_server_location || 'nbg1' }}
+      server-location: 'nbg1'
     secrets:
       TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
       HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
