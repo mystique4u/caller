@@ -206,8 +206,8 @@ jobs:
           echo ""
           # Get zone ID
           echo "🌐 Getting DNS zone ID..."
-          ZONE_RESPONSE=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            "https://api.hetzner.cloud/v1/zones?name=$DOMAIN_NAME")
+          ZONE_RESPONSE=$(curl -s -H "Auth-API-Token: $HCLOUD_TOKEN" \
+            "https://dns.hetzner.com/api/v1/zones?name=$DOMAIN_NAME")
           
           ZONE_ID=$(echo "$ZONE_RESPONSE" | jq -r '.zones[0].id // empty')
           
@@ -221,8 +221,8 @@ jobs:
           
           # Get existing records to check if DKIM exists
           echo "🔍 Checking existing DKIM record..."
-          EXISTING_RECORDS=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            "https://api.hetzner.cloud/v1/zones/$ZONE_ID/records")
+          EXISTING_RECORDS=$(curl -s -H "Auth-API-Token: $HCLOUD_TOKEN" \
+            "https://dns.hetzner.com/api/v1/records?zone_id=$ZONE_ID")
           
           # Validate API response
           if ! echo "$EXISTING_RECORDS" | jq -e '.records' > /dev/null 2>&1; then
@@ -242,18 +242,18 @@ jobs:
             # Update existing record
             UPDATE_RESPONSE=$(curl -s -X PUT \
               -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              -H "Auth-API-Token: $HCLOUD_TOKEN" \
               -d "{\"name\":\"mail._domainkey\",\"type\":\"TXT\",\"value\":\"$DKIM_VALUE\",\"ttl\":3600,\"zone_id\":\"$ZONE_ID\"}" \
-              "https://api.hetzner.cloud/v1/zones/$ZONE_ID/records/$DKIM_RECORD_ID")
+              "https://dns.hetzner.com/api/v1/records/$DKIM_RECORD_ID")
           else
             echo "➕ Creating new DKIM record..."
             
             # Create new record
             UPDATE_RESPONSE=$(curl -s -X POST \
               -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              -H "Auth-API-Token: $HCLOUD_TOKEN" \
               -d "{\"name\":\"mail._domainkey\",\"type\":\"TXT\",\"value\":\"$DKIM_VALUE\",\"ttl\":3600,\"zone_id\":\"$ZONE_ID\"}" \
-              "https://api.hetzner.cloud/v1/zones/$ZONE_ID/records")
+              "https://dns.hetzner.com/api/v1/records")
           fi
           
           echo "API Response: $UPDATE_RESPONSE"
