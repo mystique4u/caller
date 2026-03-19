@@ -885,7 +885,7 @@ jobs:
           NOREPLY_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
           
           # Create the email account (skip if exists)
-          ssh -o StrictHostKeyChecking=no root@$SERVER_IP << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP bash -s << EOF
             # Check if mailserver is running
             if ! docker ps | grep mailserver > /dev/null; then
               echo "⚠️  Mail server not running yet, skipping email setup"
@@ -893,24 +893,25 @@ jobs:
             fi
             
             # Create noreply account
-            echo "Creating noreply@${{ secrets.DOMAIN_NAME }}..."
-            echo "${{ secrets.DOMAIN_NAME }}|$(docker exec mailserver setup email add noreply@${{ secrets.DOMAIN_NAME }} '$NOREPLY_PASSWORD' 2>&1 || echo 'exists')"
-ENDSSH
+            echo "Creating noreply@${DOMAIN}..."
+            docker exec mailserver setup email add "noreply@${DOMAIN}" "${NOREPLY_PASSWORD}" 2>&1 || echo "Account may already exist"
+EOF
           
           echo "✅ Email account configured"
           
       - name: Generate DKIM keys
         run: |
           SERVER_IP="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
+          DOMAIN="${{ secrets.DOMAIN_NAME }}"
           
           echo "🔐 Generating DKIM keys..."
           
-          ssh -o StrictHostKeyChecking=no root@$SERVER_IP << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP bash -s << EOF
             # Generate DKIM keys if not exists
-            if [ ! -f /opt/services/mailserver/config/opendkim/keys/${{ secrets.DOMAIN_NAME }}/mail.txt ]; then
+            if [ ! -f /opt/services/mailserver/config/opendkim/keys/${DOMAIN}/mail.txt ]; then
               docker exec mailserver setup config dkim 2>&1 || echo "DKIM may already exist"
             fi
-ENDSSH
+EOF
           
           echo "✅ DKIM keys ready"
           
@@ -1025,6 +1026,8 @@ EOF
           SERVER_IP="${{ needs.terraform.outputs.public_ip || needs.terraform-auto.outputs.public_ip }}"
           DOMAIN="${{ secrets.DOMAIN_NAME }}"
           TO_EMAIL="${{ secrets.EMAIL_ADDRESS }}"
+          ANSIBLE_RESULT="${{ needs.ansible.result }}"
+          HEALTH_CHECK_RESULT="${{ needs.health-check.result }}"
           
           echo "📧 Sending deployment report to $TO_EMAIL..."
           
@@ -1032,7 +1035,7 @@ EOF
           sleep 30
           
           # Send email using swaks (Simple SMTP test tool)
-          ssh -o StrictHostKeyChecking=no root@$SERVER_IP << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP bash -s << EOF
             # Install swaks if not present
             if ! command -v swaks &> /dev/null; then
               apt-get update -qq && apt-get install -y -qq swaks libnet-ssleay-perl 2>&1 > /dev/null || true
@@ -1040,7 +1043,7 @@ EOF
             
             # Send the email
             DEPLOY_STATUS="SUCCESS"
-            if [ "${{ needs.ansible.result }}" != "success" ] || [ "${{ needs.health-check.result }}" != "success" ]; then
+            if [ "${ANSIBLE_RESULT}" != "success" ] || [ "${HEALTH_CHECK_RESULT}" != "success" ]; then
               DEPLOY_STATUS="PARTIAL"
             fi
             
@@ -1052,7 +1055,7 @@ EOF
             echo "✅ Mail server is ready to send emails"
             echo "⚠️  Note: DKIM configuration required for optimal deliverability"
             echo "📧 Run: /opt/services/mailserver/generate-dkim.sh"
-ENDSSH
+EOF
           
           echo "✅ Deployment notification process completed"
           echo ""
