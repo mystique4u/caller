@@ -1,0 +1,28 @@
+name: Setup Terraform
+description: Setup Terraform with proper configuration
+inputs:
+  terraform-version:
+    description: 'Terraform version to use'
+    required: false
+    default: '1.6.0'
+  tf-api-token:
+    description: 'Terraform Cloud API token'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v4
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
+        cli_config_credentials_token: ${{ inputs.tf-api-token }}
+    
+    - name: Terraform Init
+      shell: bash
+      working-directory: ./terraform
+      run: |
+        echo "🔧 Initializing Terraform..."
+        terraform init
+        echo "✅ Terraform initialized"

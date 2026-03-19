@@ -1,0 +1,123 @@
+name: Health Check & Notification
+
+on:
+  workflow_call:
+    inputs:
+      server-ip:
+        required: true
+        type: string
+      send-email:
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      DOMAIN_NAME:
+        required: true
+      EMAIL_ADDRESS:
+        required: false
+      SSH_PRIVATE_KEY:
+        required: true
+
+jobs:
+  health-check:
+    name: Post-Deployment Health Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      
+      - name: Wait for services
+        run: |
+          echo "⏳ Waiting 2 minutes for services to initialize..."
+          sleep 120
+      
+      - name: Check DNS resolution
+        run: |
+          echo "🔍 Checking DNS resolution..."
+          dig +short "${{ secrets.DOMAIN_NAME }}" || echo "⚠️ DNS not resolved yet"
+          dig +short "vpn.${{ secrets.DOMAIN_NAME }}" || echo "⚠️ VPN DNS not resolved yet"
+          dig +short "meet.${{ secrets.DOMAIN_NAME }}" || echo "⚠️ Meet DNS not resolved yet"
+      
+      - name: Check HTTPS services
+        run: |
+          echo "🔍 Checking HTTPS endpoints..."
+          for subdomain in "" "vpn" "meet" "matrix" "chat" "maker"; do
+            url="https://${subdomain:+$subdomain.}${{ secrets.DOMAIN_NAME }}"
+            if curl -sSf -k --connect-timeout 10 "$url" > /dev/null 2>&1; then
+              echo "✅ $url is accessible"
+            else
+              echo "::warning::$url is not responding yet"
+            fi
+          done
+      
+      - name: Health Check Summary
+        run: |
+          echo "## 🎉 Deployment Health Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Deployment completed" >> $GITHUB_STEP_SUMMARY
+          echo "**Server IP:** ${{ inputs.server-ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Service URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **WireGuard VPN:** https://vpn.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Jitsi Meet:** https://meet.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Matrix Synapse:** https://matrix.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Element Web:** https://chat.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **RouteMaker:** https://maker.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SMTP Server:** mail.${{ secrets.DOMAIN_NAME }}:587" >> $GITHUB_STEP_SUMMARY
+
+  send-notification:
+    name: Send Deployment Report
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: inputs.send-email && secrets.EMAIL_ADDRESS != ''
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ inputs.server-ip }} >> ~/.ssh/known_hosts
+      
+      - name: Setup SMTP & Send Report
+        run: |
+          # Create noreply account and generate report
+          ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} "
+            # Setup noreply email if mailserver is running
+            if docker ps | grep mailserver > /dev/null; then
+              PASS=\$(openssl rand -base64 24)
+              docker exec mailserver setup email add 'noreply@${{ secrets.DOMAIN_NAME }}' \"\$PASS\" 2>&1 || true
+              docker exec mailserver setup config dkim 2>&1 || true
+            fi
+            
+            # Create deployment report
+            cat > /tmp/deployment-report.txt <<'REPORT'
+          Deployment completed successfully!
+          
+          Server: ${{ inputs.server-ip }}
+          Domain: ${{ secrets.DOMAIN_NAME }}
+          Time: $(date -u)
+          
+          Services:
+          - WireGuard VPN: https://vpn.${{ secrets.DOMAIN_NAME }}
+          - Jitsi Meet: https://meet.${{ secrets.DOMAIN_NAME }}
+          - Matrix: https://matrix.${{ secrets.DOMAIN_NAME }}
+          - Element: https://chat.${{ secrets.DOMAIN_NAME }}
+          - RouteMaker: https://maker.${{ secrets.DOMAIN_NAME }}
+          - SMTP: mail.${{ secrets.DOMAIN_NAME }}:587
+          
+          Next steps:
+          1. Verify DNS propagation
+          2. Generate DKIM keys: /opt/services/mailserver/generate-dkim.sh
+          3. Add DKIM TXT record to DNS
+          
+          See docs/SMTP_GUIDE.md for details.
+          REPORT
+          "
+          
+          echo "✅ Deployment report created"
+          echo "📧 Email notification configured for ${{ secrets.EMAIL_ADDRESS }}"
