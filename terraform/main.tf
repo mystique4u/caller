@@ -64,6 +64,36 @@ resource "hcloud_firewall" "vpn_services" {
 
   rule {
     direction = "in"
+    protocol  = "tcp"
+    port      = "25"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "587"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "465"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
     protocol  = "udp"
     port      = "51820"
     source_ips = [

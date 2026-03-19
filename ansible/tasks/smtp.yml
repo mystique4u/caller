@@ -1,0 +1,179 @@
+---
+# SMTP Server Configuration and Setup
+- name: Create SMTP service directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/services/mailserver
+    - /opt/services/mailserver/mail-data
+    - /opt/services/mailserver/mail-state
+    - /opt/services/mailserver/mail-logs
+    - /opt/services/mailserver/config
+
+- name: Create mailserver environment file
+  copy:
+    dest: /opt/services/mailserver/.env
+    content: |
+      # docker-mailserver configuration
+      OVERRIDE_HOSTNAME=mail.{{ domain_name }}
+      POSTMASTER_ADDRESS=postmaster@{{ domain_name }}
+      
+      # Enable SPF checking
+      ENABLE_SPF=1
+      ENABLE_SPAMASSASSIN=1
+      SPAMASSASSIN_SPAM_TO_INBOX=1
+      
+      # Enable DKIM signing
+      ENABLE_OPENDKIM=1
+      ENABLE_OPENDMARC=1
+      
+      # Enable Fail2ban for security
+      ENABLE_FAIL2BAN=1
+      FAIL2BAN_BLOCKTYPE=drop
+      
+      # TLS/SSL configuration
+      SSL_TYPE=letsencrypt
+      PERMIT_DOCKER=network
+      
+      # Delivery options
+      ONE_DIR=1
+      DMS_DEBUG=0
+      
+      # Disable unused services
+      ENABLE_POP3=0
+      ENABLE_CLAMAV=0
+      ENABLE_POSTGREY=0
+      
+      # Allow sending only (no receiving from external)
+      SMTP_ONLY=1
+    mode: '0644'
+
+- name: Create docker-mailserver-accounts config
+  copy:
+    dest: /opt/services/mailserver/config/postfix-accounts.cf
+    content: |
+      # Email accounts - format: email|password_hash
+      # Generate hash with: docker run --rm -it docker.io/docker-mailserver/docker-mailserver:latest setup email add noreply@{{ domain_name }}
+      # For now, this will be configured manually or via setup script
+    mode: '0644'
+
+- name: Create postfix main configuration overrides
+  copy:
+    dest: /opt/services/mailserver/config/postfix-main.cf
+    content: |
+      # Custom Postfix configuration
+      # Disable local mail delivery for send-only configuration
+      mydestination = localhost
+      
+      # Set proper hostname
+      myhostname = mail.{{ domain_name }}
+      myorigin = {{ domain_name }}
+      
+      # SMTP relay configuration for authenticated sending
+      smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+      
+      # TLS configuration
+      smtpd_tls_security_level = may
+      smtp_tls_security_level = may
+      smtpd_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+      smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+    mode: '0644'
+
+- name: Create DKIM key generation script
+  copy:
+    dest: /opt/services/mailserver/generate-dkim.sh
+    content: |
+      #!/bin/bash
+      # Generate DKIM keys for email authentication
+      docker exec -it mailserver setup config dkim
+      echo ""
+      echo "DKIM public key for DNS record:"
+      echo "================================"
+      docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/{{ domain_name }}/mail.txt
+      echo ""
+      echo "Add this TXT record to your DNS:"
+      echo "Host: mail._domainkey.{{ domain_name }}"
+      echo "Value: (see above)"
+    mode: '0755'
+
+- name: Create mailserver setup helper script
+  copy:
+    dest: /opt/services/mailserver/setup-email.sh
+    content: |
+      #!/bin/bash
+      # Helper script to manage email accounts
+      
+      if [ "$1" = "add" ]; then
+        if [ -z "$2" ]; then
+          echo "Usage: $0 add <email>"
+          exit 1
+        fi
+        docker exec -it mailserver setup email add "$2"
+      elif [ "$1" = "list" ]; then
+        docker exec mailserver setup email list
+      elif [ "$1" = "del" ]; then
+        if [ -z "$2" ]; then
+          echo "Usage: $0 del <email>"
+          exit 1
+        fi
+        docker exec mailserver setup email del "$2"
+      else
+        echo "Usage:"
+        echo "  $0 add <email>    - Add a new email account"
+        echo "  $0 list           - List all email accounts"
+        echo "  $0 del <email>    - Delete an email account"
+        echo ""
+        echo "Example:"
+        echo "  $0 add noreply@{{ domain_name }}"
+      fi
+    mode: '0755'
+
+- name: Display SMTP setup instructions
+  debug:
+    msg:
+      - "================================================================"
+      - "SMTP Mail Server Configuration"
+      - "================================================================"
+      - ""
+      - "The mail server has been configured at: mail.{{ domain_name }}"
+      - ""
+      - "IMPORTANT: DNS Records Required"
+      - "================================"
+      - ""
+      - "1. Add A record:"
+      - "   Host: mail.{{ domain_name }}"
+      - "   Value: {{ server_ip }}"
+      - ""
+      - "2. Add MX record:"
+      - "   Host: {{ domain_name }}"
+      - "   Priority: 10"
+      - "   Value: mail.{{ domain_name }}"
+      - ""
+      - "3. Add SPF record (TXT):"
+      - "   Host: {{ domain_name }}"
+      - "   Value: v=spf1 mx ip4:{{ server_ip }} ~all"
+      - ""
+      - "4. Generate and add DKIM record:"
+      - "   Run: ssh root@{{ server_ip }} '/opt/services/mailserver/generate-dkim.sh'"
+      - ""
+      - "5. Add DMARC record (TXT):"
+      - "   Host: _dmarc.{{ domain_name }}"
+      - "   Value: v=DMARC1; p=quarantine; rua=mailto:postmaster@{{ domain_name }}"
+      - ""
+      - "Email Account Management:"
+      - "========================="
+      - "Add noreply account:"
+      - "  ssh root@{{ server_ip }} '/opt/services/mailserver/setup-email.sh add noreply@{{ domain_name }}'"
+      - ""
+      - "SMTP Connection Details:"
+      - "========================"
+      - "Host: mail.{{ domain_name }}"
+      - "Port: 587 (STARTTLS) or 465 (SSL/TLS)"
+      - "Authentication: Required"
+      - "Username: noreply@{{ domain_name }}"
+      - "Password: (set during account creation)"
+      - ""
+      - "See docs/SMTP_GUIDE.md for complete setup instructions"
+      - "================================================================"
