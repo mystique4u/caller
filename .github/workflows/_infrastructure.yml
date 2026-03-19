@@ -219,25 +219,37 @@ jobs:
           
           echo "✅ Found zone ID: $ZONE_ID"
           
-          # Update DKIM record via Hetzner Cloud API using jq for proper JSON encoding
-          echo "🔄 Updating DKIM DNS record..."
+          # Get existing records to check if DKIM exists
+          echo "🔍 Checking existing DKIM record..."
+          EXISTING_RECORDS=$(curl -s -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            "https://api.hetzner.cloud/v1/zones/$ZONE_ID/records")
           
-          # Create JSON payload using jq to properly escape values
-          JSON_PAYLOAD=$(jq -n \
-            --arg value "$DKIM_VALUE" \
-            '{records: [{content: $value}]}')
+          # Check if DKIM record exists
+          DKIM_RECORD_ID=$(echo "$EXISTING_RECORDS" | jq -r ".records[] | select(.name == \"mail._domainkey\" and .type == \"TXT\") | .id // empty")
           
-          echo "JSON payload: $JSON_PAYLOAD"
-          
-          UPDATE_RESPONSE=$(curl -s -X PUT \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $HCLOUD_TOKEN" \
-            -d "$JSON_PAYLOAD" \
-            "https://api.hetzner.cloud/v1/zones/$ZONE_ID/rrsets/mail._domainkey/TXT")
+          if [ -n "$DKIM_RECORD_ID" ]; then
+            echo "📝 Found existing DKIM record (ID: $DKIM_RECORD_ID), updating..."
+            
+            # Update existing record
+            UPDATE_RESPONSE=$(curl -s -X PUT \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              -d "{\"name\":\"mail._domainkey\",\"type\":\"TXT\",\"value\":\"$DKIM_VALUE\",\"ttl\":3600,\"zone_id\":\"$ZONE_ID\"}" \
+              "https://api.hetzner.cloud/v1/zones/$ZONE_ID/records/$DKIM_RECORD_ID")
+          else
+            echo "➕ Creating new DKIM record..."
+            
+            # Create new record
+            UPDATE_RESPONSE=$(curl -s -X POST \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              -d "{\"name\":\"mail._domainkey\",\"type\":\"TXT\",\"value\":\"$DKIM_VALUE\",\"ttl\":3600,\"zone_id\":\"$ZONE_ID\"}" \
+              "https://api.hetzner.cloud/v1/zones/$ZONE_ID/records")
+          fi
           
           echo "API Response: $UPDATE_RESPONSE"
           
-          if echo "$UPDATE_RESPONSE" | jq -e '.rrset' > /dev/null 2>&1; then
+          if echo "$UPDATE_RESPONSE" | jq -e '.record' > /dev/null 2>&1; then
             echo "✅ DKIM DNS record updated successfully!"
             echo ""
             echo "=========================================="
