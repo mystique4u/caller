@@ -89,3 +89,12 @@
 - name: Apply NAT rules immediately
   shell: /etc/wireguard/wg-nat.sh
   changed_when: false
+
+- name: Ensure wireguard-ui global_settings use correct DNS (never 10.0.0.1)
+  shell: |
+    SETTINGS="/opt/services/wireguard-ui/server/global_settings.json"
+    echo "aW1wb3J0IGpzb24sIG9zLCBzeXMKc2V0dGluZ3NfcGF0aCA9IHN5cy5hcmd2WzFdCmRvbWFpbiA9IHN5cy5hcmd2WzJdCm9zLm1ha2VkaXJzKG9zLnBhdGguZGlybmFtZShzZXR0aW5nc19wYXRoKSwgZXhpc3Rfb2s9VHJ1ZSkKaWYgb3MucGF0aC5leGlzdHMoc2V0dGluZ3NfcGF0aCk6CiAgICB3aXRoIG9wZW4oc2V0dGluZ3NfcGF0aCkgYXMgZjoKICAgICAgICBzID0ganNvbi5sb2FkKGYpCmVsc2U6CiAgICBzID0geyJlbmRwb2ludF9hZGRyZXNzIjogZG9tYWluLCAibXR1IjogIjE0MjAiLCAicGVyc2lzdGVudF9rZWVwYWxpdmUiOiAiMjUiLCAiZmlyZXdhbGxfbWFyayI6ICIweGNhNmMiLCAidGFibGUiOiAiYXV0byIsICJjb25maWdfZmlsZV9wYXRoIjogIi9ldGMvd2lyZWd1YXJkL3dnMC5jb25mIn0Kc1siZG5zX3NlcnZlcnMiXSA9IFsiMS4xLjEuMSIsICIxLjAuMC4xIl0Kd2l0aCBvcGVuKHNldHRpbmdzX3BhdGgsICJ3IikgYXMgZjoKICAgIGpzb24uZHVtcChzLCBmLCBpbmRlbnQ9MikKcHJpbnQoIkROUyBzZXQgdG86Iiwgc1siZG5zX3NlcnZlcnMiXSkK" \
+      | base64 -d | python3 - "$SETTINGS" "{{ domain_name }}"
+  args:
+    executable: /bin/bash
+  changed_when: false
