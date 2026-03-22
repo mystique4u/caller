@@ -24,6 +24,7 @@
     - /opt/services/routemaker
     - /opt/services/routemaker/data
     - /opt/services/routemaker/public
+    - /opt/services/jitsi-bot
 
 - name: Create backup script directory
   file:
