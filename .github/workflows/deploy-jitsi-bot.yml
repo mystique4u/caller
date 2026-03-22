@@ -98,6 +98,7 @@ jobs:
         run: |
           # Render the override file locally then copy it — avoids shell escaping
           # issues with secrets in heredocs over SSH.
+          BOT_USER="${MATRIX_BOT_USER:-jitsi-bot}"
           cat > /tmp/docker-compose.jitsi-bot.yml << YAML
           services:
             jitsi-bot:
@@ -108,7 +109,7 @@ jobs:
               container_name: jitsi-bot
               restart: unless-stopped
               environment:
-                - BOT_USERNAME=${MATRIX_BOT_USER}
+                - BOT_USERNAME=${BOT_USER}
                 - BOT_PASSWORD=${MATRIX_BOT_PASSWORD}
                 - MATRIX_DOMAIN=${DOMAIN_NAME}
                 - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
@@ -116,17 +117,15 @@ jobs:
                 - WEBHOOK_SECRET=${MATRIX_WEBHOOK_SECRET}
                 - MATRIX_ROOM=${MATRIX_BOT_ROOM}
               networks:
-                - services
-              depends_on:
-                - matrix-synapse
-                - jitsi-prosody
+                - services_network
           networks:
-            services:
+            services_network:
               external: true
-              name: services_network
           YAML
           # Strip leading indentation (heredoc artifact)
           sed -i 's/^          //' /tmp/docker-compose.jitsi-bot.yml
+          echo "--- Rendered override ---"
+          cat /tmp/docker-compose.jitsi-bot.yml
           scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
             /tmp/docker-compose.jitsi-bot.yml \
             root@${SERVER_IP}:/opt/services/docker-compose.jitsi-bot.yml
@@ -137,9 +136,11 @@ jobs:
           MATRIX_BOT_USER:     ${{ secrets.MATRIX_BOT_USER }}
           MATRIX_BOT_PASSWORD: ${{ secrets.MATRIX_BOT_PASSWORD }}
         run: |
+          BOT_USER="${MATRIX_BOT_USER:-jitsi-bot}"
+          echo "Registering Matrix user: ${BOT_USER}"
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "docker exec matrix-synapse register_new_matrix_user \
-               -u ${MATRIX_BOT_USER} -p ${MATRIX_BOT_PASSWORD} \
+               -u ${BOT_USER} -p '${MATRIX_BOT_PASSWORD}' \
                --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1 \
              | grep -v 'User ID already taken' || true"
 
@@ -148,9 +149,16 @@ jobs:
           SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            set -e
             cd /opt/services
-            docker compose -f docker-compose.yml -f docker-compose.jitsi-bot.yml \
-              up -d --build jitsi-bot
+            echo "Building jitsi-bot image..."
+            docker build -t jitsi-bot:latest /opt/services/jitsi-bot/ || {
+              echo "❌ Docker build failed"; exit 1;
+            }
+            echo "Starting jitsi-bot container..."
+            docker rm -f jitsi-bot 2>/dev/null || true
+            docker compose -f docker-compose.jitsi-bot.yml up -d jitsi-bot
+            echo "✅ Container started"
           EOF
 
       - name: Reload Prosody to pick up Lua plugin
