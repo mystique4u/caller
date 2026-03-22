@@ -91,6 +91,8 @@ services:
       - XMPP_MUC_MODULES=matrix_webhook
       - MATRIX_WEBHOOK_URL=http://jitsi-bot:3001/webhook
       - MATRIX_WEBHOOK_SECRET={{ matrix_webhook_secret }}
+      # Trust Docker subnets so Prosody uses X-Forwarded-For for real client IPs
+      - PROSODY_TRUSTED_PROXIES=127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
     volumes:
       - /opt/services/jitsi/prosody/config:/config
       - /opt/services/jitsi/prosody/prosody-plugins-custom:/prosody-plugins-custom

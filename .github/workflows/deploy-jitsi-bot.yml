@@ -178,6 +178,14 @@ jobs:
               echo "Prosody env vars already present ✅"
             fi
 
+            # Idempotently add PROSODY_TRUSTED_PROXIES so Prosody uses real client IPs
+            if ! grep -q "PROSODY_TRUSTED_PROXIES" "\$COMPOSE"; then
+              echo "Adding PROSODY_TRUSTED_PROXIES..."
+              sed -i "/MATRIX_WEBHOOK_SECRET/a\\      - PROSODY_TRUSTED_PROXIES=127.0.0.1,::1,172.16.0.0\/12,10.0.0.0\/8" "\$COMPOSE"
+            else
+              echo "PROSODY_TRUSTED_PROXIES already present ✅"
+            fi
+
             # Ensure plugin file is in place
             cp /opt/services/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
                /opt/services/jitsi/prosody/prosody-plugins-custom/
