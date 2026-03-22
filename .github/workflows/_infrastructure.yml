@@ -46,6 +46,10 @@ on:
         required: false
       LIVEKIT_API_SECRET:
         required: false
+      MATRIX_BOT_USER:
+        required: false
+      MATRIX_BOT_PASSWORD:
+        required: false
     outputs:
       server-ip:
         description: 'Server IP address'
@@ -143,6 +147,8 @@ jobs:
           MATRIX_POSTGRES_PASSWORD: ${{ secrets.MATRIX_POSTGRES_PASSWORD }}
           LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
           LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+          MATRIX_BOT_USER: ${{ secrets.MATRIX_BOT_USER }}
+          MATRIX_BOT_PASSWORD: ${{ secrets.MATRIX_BOT_PASSWORD }}
         run: |
           EXTRA_VARS=""
           [ -n "$JITSI_ADMIN_USER" ] && [ -n "$JITSI_ADMIN_PASSWORD" ] && \
