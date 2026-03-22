@@ -194,17 +194,15 @@ jobs:
              || echo '(DKIM key not yet available — mailserver may still be starting)'" \
             > /tmp/dkim-key.txt 2>&1 || echo "(unable to fetch DKIM key)" > /tmp/dkim-key.txt
 
-          # Storagebox free space (lftp direct from runner, port 23)
+          # Storagebox free space via sshpass (port 23, no lftp needed)
           if [ -n "$STORAGEBOX_HOST" ] && [ -n "$STORAGEBOX_USER" ] && [ -n "$STORAGEBOX_PASSWORD" ]; then
-            lftp -u "$STORAGEBOX_USER,$STORAGEBOX_PASSWORD" -p 23 "sftp://$STORAGEBOX_HOST" \
-              > /tmp/storagebox-df.txt 2>&1 << LEOF || echo "(lftp command failed)" >> /tmp/storagebox-df.txt
-          set sftp:auto-confirm yes
-          set ssl:verify-certificate no
-          set net:timeout 15
-          set net:max-retries 1
-          df
-          bye
-          LEOF
+            sudo apt-get install -y -qq sshpass 2>/dev/null
+            sshpass -p "$STORAGEBOX_PASSWORD" ssh \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=15 \
+              -p 23 "$STORAGEBOX_USER@$STORAGEBOX_HOST" df -h \
+              > /tmp/storagebox-df.txt 2>&1 \
+              || echo "(storagebox connection failed)" > /tmp/storagebox-df.txt
           else
             echo "(STORAGEBOX credentials not configured)" > /tmp/storagebox-df.txt
           fi
