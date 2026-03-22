@@ -33,6 +33,59 @@
   no_log: true
   when: not wg0_conf_stat.stat.exists
 
+- name: Deploy fix-allowed-ips script (wireguard-ui v0.6.x bug workaround)
+  copy:
+    dest: /etc/wireguard/fix-allowed-ips.sh
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      # wireguard-ui v0.6.x bug: generates wg0.conf with AllowedIPs=0.0.0.0/0
+      # for ALL server peer entries (using client allowed_ips instead of
+      # allocated_ips). WireGuard only permits one peer per prefix, so all but
+      # the last peer get allowed ips: (none) and can't receive traffic.
+      # This script re-applies each client's allocated_ips as the server-side
+      # AllowedIPs so the kernel can route return traffic correctly.
+      CLIENTS_DIR=/opt/services/wireguard-ui/clients
+      for f in "$CLIENTS_DIR"/*.json; do
+        pubkey=$(python3 -c "import json; d=json.load(open('$f')); print(d['public_key'])")
+        allocated=$(python3 -c "import json; d=json.load(open('$f')); print(','.join(d['allocated_ips']))")
+        /usr/bin/wg set wg0 peer "$pubkey" allowed-ips "$allocated" 2>/dev/null
+      done
+
+- name: Ensure wireguard-ui interfaces.json post_up calls fix-allowed-ips (idempotent)
+  shell: |
+    IFACE=/opt/services/wireguard-ui/server/interfaces.json
+    if [ -f "$IFACE" ]; then
+      python3 - "$IFACE" <<'PYEOF'
+    import json, sys
+    path = sys.argv[1]
+    d = json.load(open(path))
+    fix = "; /etc/wireguard/fix-allowed-ips.sh"
+    if fix not in d.get("post_up", ""):
+        d["post_up"] = d.get("post_up", "") + fix
+        json.dump(d, open(path, "w"), indent=4)
+        print("Updated post_up in interfaces.json")
+    else:
+        print("post_up already patched")
+    PYEOF
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Ensure wg0.conf PostUp calls fix-allowed-ips (if conf already exists)
+  shell: |
+    WG_CONF=/etc/wireguard/wg0.conf
+    if [ -f "$WG_CONF" ] && ! grep -q "fix-allowed-ips" "$WG_CONF"; then
+      sed -i 's|^PostUp = .*|& ; /etc/wireguard/fix-allowed-ips.sh|' "$WG_CONF"
+      echo "patched wg0.conf PostUp"
+    else
+      echo "already patched or conf not present"
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+
 - name: Deploy idempotent NAT setup script
   copy:
     dest: /etc/wireguard/wg-nat.sh

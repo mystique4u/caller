@@ -87,6 +87,12 @@ services:
       - ENABLE_AUTH=1
       - ENABLE_GUESTS=0
       - AUTH_TYPE=internal
+      # Matrix webhook notification module
+      - XMPP_MUC_MODULES=matrix_webhook
+      - MATRIX_WEBHOOK_URL=http://jitsi-bot:3001/webhook
+      - MATRIX_WEBHOOK_SECRET={{ matrix_webhook_secret }}
+      # Trust Docker subnets so Prosody uses X-Forwarded-For for real client IPs
+      - PROSODY_TRUSTED_PROXIES=127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
     volumes:
       - /opt/services/jitsi/prosody/config:/config
       - /opt/services/jitsi/prosody/prosody-plugins-custom:/prosody-plugins-custom
@@ -230,6 +236,27 @@ services:
       - "traefik.http.routers.routemaker.tls=true"
       - "traefik.http.routers.routemaker.tls.certresolver=letsencrypt"
       - "traefik.http.services.routemaker.loadbalancer.server.port=3000"
+
+  jitsi-bot:
+    build:
+      context: /opt/services/jitsi-bot
+      dockerfile: Dockerfile
+    image: jitsi-bot:latest
+    container_name: jitsi-bot
+    restart: unless-stopped
+    environment:
+      - BOT_USERNAME={{ matrix_bot_user }}
+      - BOT_PASSWORD={{ matrix_bot_password }}
+      - MATRIX_DOMAIN={{ domain_name }}
+      - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
+      - JITSI_PUBLIC_URL=https://meet.{{ domain_name }}
+      - WEBHOOK_SECRET={{ matrix_webhook_secret }}
+      - MATRIX_ROOM={{ matrix_bot_room | default('') }}
+    networks:
+      - services
+    depends_on:
+      - matrix-synapse
+      - jitsi-prosody
 
   mailserver:
     image: docker.io/mailserver/docker-mailserver:latest
