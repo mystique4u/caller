@@ -5,7 +5,7 @@ WORKDIR /app
 COPY bot.py ./
 
 ENV PORT=3001 \
-    NODE_ENV=production
+    PYTHONUNBUFFERED=1
 
 EXPOSE 3001
 

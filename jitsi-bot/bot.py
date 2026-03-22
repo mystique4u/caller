@@ -66,6 +66,9 @@ def _login():
         "identifier": {"type": "m.id.user", "user": BOT_USERNAME},
         "password":   BOT_PASSWORD,
     })
+    if status == 429:
+        retry_s = body.get("retry_after_ms", 60000) / 1000
+        raise RuntimeError(f"RATE_LIMITED:{retry_s:.0f}")
     if status != 200:
         raise RuntimeError(f"Login failed ({status}): {body}")
     _access_token = body["access_token"]
@@ -238,16 +241,27 @@ class WebhookHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
+# ── Startup with retry ───────────────────────────────────────────────────────
 def start():
-    for attempt in range(1, 13):
+    MAX_RETRIES = 20
+    attempt = 0
+
+    while attempt < MAX_RETRIES:
         try:
             _login()
             _ensure_room()
             break
-        except Exception as exc:
-            remaining = 12 - attempt
-            print(f"[startup] {exc}. Retry in 15s ({remaining} left)")
+        except RuntimeError as exc:
+            msg = str(exc)
+            if msg.startswith("RATE_LIMITED:"):
+                wait = float(msg.split(":")[1]) + 5  # add 5s buffer
+                print(f"[startup] Rate limited by Synapse. Waiting {wait:.0f}s before retry...")
+                time.sleep(wait)
+                # don't count rate-limit waits as retry attempts
+                continue
+            attempt += 1
+            remaining = MAX_RETRIES - attempt
+            print(f"[startup] {exc}. Retry in 15s ({remaining} attempts left)")
             if remaining == 0:
                 print("[startup] Max retries reached. Exiting.")
                 sys.exit(1)
