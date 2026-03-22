@@ -188,6 +188,22 @@ jobs:
             echo "✅ Prosody restarted with webhook module"
           ENVSSH
 
+      - name: Patch jitsi-web nginx to forward real client IPs
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            if docker exec jitsi-web grep -q 'X-Forwarded-For \$remote_addr' /config/nginx/meet.conf 2>/dev/null; then
+              docker exec jitsi-web sed -i \
+                's/proxy_set_header X-Forwarded-For \$remote_addr/proxy_set_header X-Forwarded-For \$http_x_forwarded_for/g' \
+                /config/nginx/meet.conf
+              docker exec jitsi-web nginx -s reload
+              echo "✅ nginx patched and reloaded"
+            else
+              echo "✅ nginx already patched (or not running)"
+            fi
+          EOF
+
       - name: Wait for bot to start
         env:
           SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
