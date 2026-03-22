@@ -25,6 +25,16 @@ local function display_name(nick)
   return nick and (nick:match("/(.+)$") or nick) or "unknown"
 end
 
+-- Best display name: prefer authenticated username (bare_jid local part),
+-- fall back to MUC nick resource (may be hex session id for guests)
+local function participant_name(occupant)
+  if occupant.bare_jid then
+    local user = occupant.bare_jid:match("^([^@]+)")
+    if user and user ~= "" then return user end
+  end
+  return display_name(occupant.nick)
+end
+
 local function post_event(payload)
   local body    = json.encode(payload)
   local headers = { ["Content-Type"] = "application/json" }
@@ -67,7 +77,7 @@ module:hook("muc-occupant-joined", function(event)
   post_event({
     event       = "participant_joined",
     room        = room_name(event.room.jid),
-    participant = display_name(event.occupant.nick),
+    participant = participant_name(event.occupant),
     ip          = origin and origin.ip or nil,
     timestamp   = os.time(),
   })
@@ -77,7 +87,7 @@ module:hook("muc-occupant-left", function(event)
   post_event({
     event       = "participant_left",
     room        = room_name(event.room.jid),
-    participant = display_name(event.occupant.nick),
+    participant = participant_name(event.occupant),
     timestamp   = os.time(),
   })
 end)
