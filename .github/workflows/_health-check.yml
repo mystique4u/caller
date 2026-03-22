@@ -188,11 +188,22 @@ jobs:
             "df -h --output=source,size,used,avail,pcent,target | grep -v tmpfs | grep -v overlay | grep -v udev" \
             > /tmp/server-df.txt 2>&1 || echo "(unable to get server disk info)" > /tmp/server-df.txt
 
-          # DKIM public key
-          ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} \
-            "docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/$DOMAIN_NAME/mail.txt 2>/dev/null \
-             || echo '(DKIM key not yet available — mailserver may still be starting)'" \
-            > /tmp/dkim-key.txt 2>&1 || echo "(unable to fetch DKIM key)" > /tmp/dkim-key.txt
+          # DKIM public key — extract and output clean single-line value for DNS copy-paste
+          RAW_DKIM=$(ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} \
+            "docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/$DOMAIN_NAME/mail.txt 2>/dev/null" \
+            2>&1 || true)
+          if [ -n "$RAW_DKIM" ]; then
+            # Concatenate all quoted chunks into one clean value
+            CLEAN_DKIM=$(echo "$RAW_DKIM" | grep -oP '(?<=")[^"]+(?=")' | tr -d '\n' | sed 's/[[:space:]]*$//')
+            {
+              echo "Host : mail._domainkey.$DOMAIN_NAME"
+              echo "Type : TXT"
+              echo "Value (paste this entire line into DNS):"
+              echo "$CLEAN_DKIM"
+            } > /tmp/dkim-key.txt
+          else
+            echo "(DKIM key not yet available — mailserver may still be starting)" > /tmp/dkim-key.txt
+          fi
 
           # Storagebox free space via sshpass (port 23, no lftp needed)
           if [ -n "$STORAGEBOX_HOST" ] && [ -n "$STORAGEBOX_USER" ] && [ -n "$STORAGEBOX_PASSWORD" ]; then
