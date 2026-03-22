@@ -20,6 +20,11 @@ local function room_name(jid)
   return jid:match("^([^@]+)") or jid
 end
 
+-- Extract display name from occupant nick JID like "room@muc.domain/DisplayName"
+local function display_name(nick)
+  return nick and (nick:match("/(.+)$") or nick) or "unknown"
+end
+
 local function post_event(payload)
   local body    = json.encode(payload)
   local headers = { ["Content-Type"] = "application/json" }
@@ -62,7 +67,7 @@ module:hook("muc-occupant-joined", function(event)
   post_event({
     event       = "participant_joined",
     room        = room_name(event.room.jid),
-    participant = event.occupant.nick or "unknown",
+    participant = display_name(event.occupant.nick),
     ip          = origin and origin.ip or nil,
     timestamp   = os.time(),
   })
@@ -72,7 +77,7 @@ module:hook("muc-occupant-left", function(event)
   post_event({
     event       = "participant_left",
     room        = room_name(event.room.jid),
-    participant = event.occupant.nick or "unknown",
+    participant = display_name(event.occupant.nick),
     timestamp   = os.time(),
   })
 end)
