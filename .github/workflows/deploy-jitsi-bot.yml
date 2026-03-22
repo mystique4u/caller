@@ -161,12 +161,32 @@ jobs:
             echo "✅ Container started"
           EOF
 
-      - name: Reload Prosody to pick up Lua plugin
+      - name: Ensure Prosody has webhook env vars and Lua plugin
         env:
-          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+          SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
+          MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
-            "docker restart jitsi-prosody || true"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << ENVSSH
+            set -e
+            COMPOSE=/opt/services/docker-compose.yml
+
+            # Idempotently add XMPP_MUC_MODULES to docker-compose.yml if missing
+            if ! grep -q "XMPP_MUC_MODULES=matrix_webhook" "\$COMPOSE"; then
+              echo "Adding webhook env vars to docker-compose.yml..."
+              sed -i "/- ENABLE_AUTH=1/a\\      - XMPP_MUC_MODULES=matrix_webhook\\n      - MATRIX_WEBHOOK_URL=http://jitsi-bot:3001/webhook\\n      - MATRIX_WEBHOOK_SECRET=${MATRIX_WEBHOOK_SECRET}" "\$COMPOSE"
+            else
+              echo "Prosody env vars already present ✅"
+            fi
+
+            # Ensure plugin file is in place
+            cp /opt/services/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
+               /opt/services/jitsi/prosody/prosody-plugins-custom/
+
+            # Recreate jitsi-prosody to pick up env + plugin
+            cd /opt/services
+            docker compose up -d --force-recreate jitsi-prosody
+            echo "✅ Prosody restarted with webhook module"
+          ENVSSH
 
       - name: Wait for bot to start
         env:
