@@ -23,16 +23,10 @@
     matrix_synapse_image: "matrixdotorg/synapse:latest"
     matrix_postgres_image: "postgres:15-alpine"
     element_web_image: "vectorim/element-web:latest"
-    livekit_image: "livekit/livekit-server:latest"
-    lk_jwt_service_image: "ghcr.io/element-hq/lk-jwt-service:0.4.1"
-    coturn_image: "coturn/coturn:4.6.2"
     matrix_admin_user: "{{ lookup('env', 'MATRIX_ADMIN_USER') | default('admin', true) }}"
     matrix_admin_password: "{{ lookup('env', 'MATRIX_ADMIN_PASSWORD') }}"
     matrix_registration_secret: "{{ lookup('env', 'MATRIX_REGISTRATION_SECRET') }}"
     postgres_password: "{{ lookup('env', 'MATRIX_POSTGRES_PASSWORD') }}"
-    livekit_api_key: "{{ lookup('env', 'LIVEKIT_API_KEY') }}"
-    livekit_api_secret: "{{ lookup('env', 'LIVEKIT_API_SECRET') }}"
-    turn_shared_secret: "{{ lookup('env', 'TURN_SHARED_SECRET') }}"
 
   tasks:
     - name: System setup and Docker installation
@@ -53,7 +47,7 @@
 
     - name: Configure service-specific files
       include_tasks: tasks/service-configs.yml
-      tags: ['config', 'livekit', 'turn']
+      tags: ['config']
 
     - name: Configure Matrix Synapse
       include_tasks: tasks/matrix.yml

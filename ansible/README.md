@@ -16,7 +16,7 @@ ansible/
 │   ├── wireguard.yml           # WireGuard VPN configuration
 │   ├── directories.yml         # Create all service directories
 │   ├── traefik.yml             # Traefik reverse proxy setup
-│   ├── service-configs.yml     # LiveKit, TURN configurations
+│   ├── service-configs.yml     # Service-specific configuration files
 │   ├── matrix.yml              # Matrix Synapse configuration
 │   ├── services.yml            # Docker Compose deployment & health checks
 │   └── backup.yml              # Backup configuration
@@ -102,7 +102,6 @@ See the main playbook for required environment variables:
 - `MATRIX_REGISTRATION_SECRET`
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
-- `TURN_SHARED_SECRET`
 - `JITSI_ADMIN_USER`
 - `JITSI_ADMIN_PASSWORD`
 - `STORAGEBOX_HOST` (optional, for backups)
