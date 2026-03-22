@@ -60,11 +60,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Ansible
-        uses: ./.github/actions/setup-ansible
-        with:
-          server-ip: ${{ needs.get-server-ip.outputs.server_ip }}
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Setup SSH key
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${SERVER_IP} >> ~/.ssh/known_hosts
 
       - name: Sync bot files to server
         env:
@@ -80,29 +83,82 @@ jobs:
           SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
-            "cp /opt/services/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
+            "mkdir -p /opt/services/jitsi/prosody/prosody-plugins-custom && \
+             cp /opt/services/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
                 /opt/services/jitsi/prosody/prosody-plugins-custom/"
 
-      - name: Rebuild and restart bot container
+      - name: Write docker-compose override for jitsi-bot
+        env:
+          SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME:           ${{ secrets.DOMAIN_NAME }}
+          MATRIX_BOT_USER:       ${{ secrets.MATRIX_BOT_USER }}
+          MATRIX_BOT_PASSWORD:   ${{ secrets.MATRIX_BOT_PASSWORD }}
+          MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
+          MATRIX_BOT_ROOM:       ${{ secrets.MATRIX_BOT_ROOM }}
+        run: |
+          # Render the override file locally then copy it — avoids shell escaping
+          # issues with secrets in heredocs over SSH.
+          cat > /tmp/docker-compose.jitsi-bot.yml << YAML
+          services:
+            jitsi-bot:
+              build:
+                context: /opt/services/jitsi-bot
+                dockerfile: Dockerfile
+              image: jitsi-bot:latest
+              container_name: jitsi-bot
+              restart: unless-stopped
+              environment:
+                - BOT_USERNAME=${MATRIX_BOT_USER}
+                - BOT_PASSWORD=${MATRIX_BOT_PASSWORD}
+                - MATRIX_DOMAIN=${DOMAIN_NAME}
+                - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
+                - JITSI_PUBLIC_URL=https://meet.${DOMAIN_NAME}
+                - WEBHOOK_SECRET=${MATRIX_WEBHOOK_SECRET}
+                - MATRIX_ROOM=${MATRIX_BOT_ROOM}
+              networks:
+                - services
+              depends_on:
+                - matrix-synapse
+                - jitsi-prosody
+          networks:
+            services:
+              external: true
+              name: services_network
+          YAML
+          # Strip leading indentation (heredoc artifact)
+          sed -i 's/^          //' /tmp/docker-compose.jitsi-bot.yml
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+            /tmp/docker-compose.jitsi-bot.yml \
+            root@${SERVER_IP}:/opt/services/docker-compose.jitsi-bot.yml
+
+      - name: Register Matrix bot user (idempotent)
+        env:
+          SERVER_IP:           ${{ needs.get-server-ip.outputs.server_ip }}
+          MATRIX_BOT_USER:     ${{ secrets.MATRIX_BOT_USER }}
+          MATRIX_BOT_PASSWORD: ${{ secrets.MATRIX_BOT_PASSWORD }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker exec matrix-synapse register_new_matrix_user \
+               -u ${MATRIX_BOT_USER} -p ${MATRIX_BOT_PASSWORD} \
+               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1 \
+             | grep -v 'User ID already taken' || true"
+
+      - name: Build and start jitsi-bot container
         env:
           SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
-          DOMAIN_NAME:             ${{ secrets.DOMAIN_NAME }}
-          MATRIX_BOT_USER:         ${{ secrets.MATRIX_BOT_USER }}
-          MATRIX_BOT_PASSWORD:     ${{ secrets.MATRIX_BOT_PASSWORD }}
-          MATRIX_WEBHOOK_SECRET:   ${{ secrets.MATRIX_WEBHOOK_SECRET }}
-          MATRIX_BOT_ROOM:         ${{ secrets.MATRIX_BOT_ROOM }}
-          MATRIX_REGISTRATION_SECRET: ${{ secrets.MATRIX_REGISTRATION_SECRET }}
-          MATRIX_POSTGRES_PASSWORD:   ${{ secrets.MATRIX_POSTGRES_PASSWORD }}
         run: |
-          ansible-playbook ansible/playbook.yml \
-            --tags bot,services \
-            -e "domain_name=${DOMAIN_NAME}" \
-            -e "matrix_bot_user=${MATRIX_BOT_USER}" \
-            -e "matrix_bot_password=${MATRIX_BOT_PASSWORD}" \
-            -e "matrix_webhook_secret=${MATRIX_WEBHOOK_SECRET}" \
-            -e "matrix_bot_room=${MATRIX_BOT_ROOM}" \
-            -e "matrix_registration_secret=${MATRIX_REGISTRATION_SECRET}" \
-            -e "postgres_password=${MATRIX_POSTGRES_PASSWORD}"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            cd /opt/services
+            docker compose -f docker-compose.yml -f docker-compose.jitsi-bot.yml \
+              up -d --build jitsi-bot
+          EOF
+
+      - name: Reload Prosody to pick up Lua plugin
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker restart jitsi-prosody || true"
 
       - name: Wait for bot to start
         env:
