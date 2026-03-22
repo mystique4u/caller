@@ -18,6 +18,7 @@ on:
           - 'jitsi-only'
           - 'wireguard-only'
           - 'traefik-only'
+          - 'mailserver-only'
         default: 'all'
       confirm:
         description: 'Type "RESTORE" to confirm (will overwrite current data!)'
@@ -183,6 +184,18 @@ jobs:
               echo "✅ Traefik configs restored"
             else
               echo "⚠️  No Traefik backup found"
+            fi
+          fi
+          
+          if [ "$RESTORE_COMPONENTS" = "all" ] || [ "$RESTORE_COMPONENTS" = "mailserver-only" ]; then
+            echo "📧 Restoring mail server data..."
+            MAILSERVER_FILE=$(ls ${RESTORE_DIR}/mailserver-*.tar.gz | head -1)
+            if [ -f "$MAILSERVER_FILE" ]; then
+              rm -rf /opt/services/mailserver/*
+              tar -xzf "$MAILSERVER_FILE" -C /opt/services/mailserver/
+              echo "✅ Mail server data restored"
+            else
+              echo "⚠️  No mail server backup found"
             fi
           fi
           

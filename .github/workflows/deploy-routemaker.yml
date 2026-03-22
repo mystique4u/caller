@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/routemaker-only-deploy
+      - feature/smtp-server
     paths:
       - 'routemaker/**'
       - '.github/workflows/deploy-routemaker.yml'
@@ -88,23 +89,16 @@ jobs:
           echo "🔨 Rebuilding RouteMaker Docker image..."
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
             set -e
-            cd /opt/services/routemaker
             
             # Ensure data directory has correct permissions
             chown -R 1000:1000 /opt/services/routemaker/data 2>/dev/null || true
             
-            # Rebuild the image
-            docker build -t routemaker:latest .
-            
-            # Stop and remove old container
-            docker stop routemaker 2>/dev/null || true
-            docker rm routemaker 2>/dev/null || true
-            
-            # Start new container (use docker compose V2)
+            # Use docker compose to build and restart
             cd /opt/services
+            docker compose build routemaker
             docker compose up -d routemaker
             
-            echo "✅ RouteMaker container restarted"
+            echo "✅ RouteMaker container rebuilt and restarted"
           EOF
       
       - name: Wait for container to be healthy
