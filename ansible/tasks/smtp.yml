@@ -1,0 +1,277 @@
+---
+# SMTP Server Configuration and Setup
+- name: Create SMTP service directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/services/mailserver
+    - /opt/services/mailserver/mail-data
+    - /opt/services/mailserver/mail-state
+    - /opt/services/mailserver/mail-logs
+    - /opt/services/mailserver/config
+
+- name: Create mailserver environment file
+  copy:
+    dest: /opt/services/mailserver/.env
+    content: |
+      # docker-mailserver configuration
+      OVERRIDE_HOSTNAME=mail.{{ domain_name }}
+      POSTMASTER_ADDRESS=postmaster@{{ domain_name }}
+      
+      # Enable SPF checking
+      ENABLE_SPF=1
+      ENABLE_SPAMASSASSIN=1
+      SPAMASSASSIN_SPAM_TO_INBOX=1
+      
+      # Enable DKIM signing
+      ENABLE_OPENDKIM=1
+      ENABLE_OPENDMARC=1
+      
+      # Enable Fail2ban for security
+      ENABLE_FAIL2BAN=1
+      FAIL2BAN_BLOCKTYPE=drop
+      
+      # TLS/SSL configuration
+      SSL_TYPE=letsencrypt
+      PERMIT_DOCKER=network
+      
+      # Delivery options
+      ONE_DIR=1
+      DMS_DEBUG=0
+      
+      # Disable unused services
+      ENABLE_POP3=0
+      ENABLE_CLAMAV=0
+      ENABLE_POSTGREY=0
+      
+      # Allow sending only (no receiving from external)
+      SMTP_ONLY=1
+    mode: '0644'
+
+- name: Create docker-mailserver-accounts config
+  copy:
+    dest: /opt/services/mailserver/config/postfix-accounts.cf
+    content: |
+      # Email accounts - format: email|password_hash
+      # Generate hash with: docker run --rm -it docker.io/docker-mailserver/docker-mailserver:latest setup email add noreply@{{ domain_name }}
+      # For now, this will be configured manually or via setup script
+    mode: '0644'
+
+- name: Create postfix main configuration overrides
+  copy:
+    dest: /opt/services/mailserver/config/postfix-main.cf
+    content: |
+      # Custom Postfix configuration
+      # Disable local mail delivery for send-only configuration
+      mydestination = localhost
+      
+      # Set proper hostname
+      myhostname = mail.{{ domain_name }}
+      myorigin = {{ domain_name }}
+      
+      # SMTP relay configuration for authenticated sending
+      smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+      
+      # TLS configuration
+      smtpd_tls_security_level = may
+      smtp_tls_security_level = may
+      smtpd_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+      smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+    mode: '0644'
+
+- name: Create DKIM key generation script
+  copy:
+    dest: /opt/services/mailserver/generate-dkim.sh
+    content: |
+      #!/bin/bash
+      # Generate DKIM keys for email authentication
+      docker exec -it mailserver setup config dkim
+      echo ""
+      echo "DKIM public key for DNS record:"
+      echo "================================"
+      docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/{{ domain_name }}/mail.txt
+      echo ""
+      echo "Add this TXT record to your DNS:"
+      echo "Host: mail._domainkey.{{ domain_name }}"
+      echo "Value: (see above)"
+    mode: '0755'
+
+- name: Create mailserver setup helper script
+  copy:
+    dest: /opt/services/mailserver/setup-email.sh
+    content: |
+      #!/bin/bash
+      # Helper script to manage email accounts
+      
+      if [ "$1" = "add" ]; then
+        if [ -z "$2" ]; then
+          echo "Usage: $0 add <email>"
+          exit 1
+        fi
+        docker exec -it mailserver setup email add "$2"
+      elif [ "$1" = "list" ]; then
+        docker exec mailserver setup email list
+      elif [ "$1" = "del" ]; then
+        if [ -z "$2" ]; then
+          echo "Usage: $0 del <email>"
+          exit 1
+        fi
+        docker exec mailserver setup email del "$2"
+      else
+        echo "Usage:"
+        echo "  $0 add <email>    - Add a new email account"
+        echo "  $0 list           - List all email accounts"
+        echo "  $0 del <email>    - Delete an email account"
+        echo ""
+        echo "Example:"
+        echo "  $0 add noreply@{{ domain_name }}"
+      fi
+    mode: '0755'
+
+- name: Create email sending script
+  copy:
+    dest: /opt/services/mailserver/send-email.py
+    content: |
+      #!/usr/bin/env python3
+      """
+      Simple SMTP email sender using the local mailserver
+      Usage: ./send-email.py <to_address> <subject> <body_file>
+      """
+      import sys
+      import smtplib
+      from email.mime.text import MIMEText
+      from email.mime.multipart import MIMEMultipart
+      import os
+      
+      def send_email(to_addr, subject, body_file, from_addr, smtp_pass):
+          # Read body from file
+          with open(body_file, 'r') as f:
+              body = f.read()
+          
+          # Create message
+          msg = MIMEMultipart()
+          msg['From'] = from_addr
+          msg['To'] = to_addr
+          msg['Subject'] = subject
+          msg.attach(MIMEText(body, 'plain'))
+          
+          # Send via local mailserver on port 25 (local delivery, no auth needed)
+          try:
+              with smtplib.SMTP('localhost', 25) as server:
+                  server.send_message(msg)
+                  print(f"✅ Email sent successfully to {to_addr}")
+                  return 0
+          except Exception as e:
+              print(f"❌ Failed to send email: {e}")
+              return 1
+      
+      if __name__ == '__main__':
+          if len(sys.argv) != 4:
+              print("Usage: send-email.py <to_address> <subject> <body_file>")
+              sys.exit(1)
+          
+          to_addr = sys.argv[1]
+          subject = sys.argv[2]
+          body_file = sys.argv[3]
+          from_addr = os.environ.get('FROM_EMAIL', 'noreply@{{ domain_name }}')
+          smtp_pass = os.environ.get('SMTP_PASS', '')
+          
+          sys.exit(send_email(to_addr, subject, body_file, from_addr, smtp_pass))
+    mode: '0755'
+
+- name: Wait for mailserver container to be ready
+  shell: |
+    for i in {1..30}; do
+      if docker ps | grep mailserver | grep -q "healthy\|Up"; then
+        echo "Mailserver is ready"
+        exit 0
+      fi
+      sleep 2
+    done
+    echo "Mailserver not ready after 60 seconds"
+    exit 1
+  register: mailserver_status
+  ignore_errors: yes
+
+- name: Check if DKIM keys already exist
+  stat:
+    path: /opt/services/mailserver/config/opendkim/keys/{{ domain_name }}/mail.private
+  register: dkim_key_check
+
+- name: Generate DKIM keys (only if they don't exist)
+  shell: |
+    docker exec mailserver setup config dkim
+    sleep 2
+  when: 
+    - mailserver_status is succeeded
+    - not dkim_key_check.stat.exists
+  register: dkim_generation
+
+- name: Extract DKIM public key for DNS
+  shell: |
+    docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/{{ domain_name }}/mail.txt 2>/dev/null || echo "DKIM key not found"
+  register: dkim_public_key
+  when: mailserver_status is succeeded
+  ignore_errors: yes
+
+- name: Display SMTP setup instructions
+  debug:
+    msg:
+      - "================================================================"
+      - "SMTP Mail Server Configuration"
+      - "================================================================"
+      - ""
+      - "Mail server: mail.{{ domain_name }}"
+      - "Server IP: {{ server_ip }}"
+      - ""
+      - "DNS Records Status"
+      - "================================"
+      - "✅ A record (mail.{{ domain_name }}) - Automated via Terraform"
+      - "✅ MX record (@) - Automated via Terraform"
+      - "✅ SPF record (@) - Automated via Terraform"
+      - "✅ DMARC record (_dmarc) - Automated via Terraform"
+      - "{% if dkim_generation is defined and dkim_generation is changed %}✅ DKIM keys - Generated (see below){% elif not dkim_key_check.stat.exists %}⚠️  DKIM keys - Not generated yet{% else %}✅ DKIM keys - Already exist (preserved){% endif %}"
+      - ""
+      - "SMTP Connection Details:"
+      - "========================"
+      - "Host: mail.{{ domain_name }}"
+      - "Port: 587 (STARTTLS) or 465 (SSL/TLS)"
+      - "Authentication: Required"
+      - ""
+      - "Email Account Management:"
+      - "========================="
+      - "Accounts auto-created by deployment workflow"
+      - "Manual: /opt/services/mailserver/setup-email.sh add <email>"
+      - ""
+      - "See docs/SMTP_GUIDE.md for complete documentation"
+      - "================================================================"
+
+- name: Display DKIM DNS record status
+  debug:
+    msg:
+      - ""
+      - "================================================================"
+      - "✅ DKIM Key Generated Successfully"
+      - "================================================================"
+      - ""
+      - "DKIM public key extracted:"
+      - "{{ dkim_public_key.stdout }}"
+      - ""
+      - "🤖 Automated DNS Update:"
+      - "The workflow will automatically update the DKIM DNS record"
+      - "via Hetzner Cloud API after this playbook completes."
+      - ""
+      - "Record: mail._domainkey.{{ domain_name }}"
+      - "Type: TXT"
+      - ""
+      - "✅ No manual action required!"
+      - ""
+      - "Note: DKIM keys are persistent and backed up."
+      - "They will NOT regenerate on redeployment."
+      - "================================================================"
+  when: 
+    - dkim_public_key is defined
+    - dkim_public_key.stdout is defined
+    - "'DKIM' in dkim_public_key.stdout"

@@ -1,0 +1,170 @@
+name: Deploy Infrastructure (Modular)
+
+on:
+  push:
+    branches:
+      - main
+      - feature/smtp-server
+    paths:
+      - 'terraform/**'
+      - 'ansible/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - plan
+          - apply
+      skip_validation:
+        description: 'Skip validation stages'
+        required: false
+        default: false
+        type: boolean
+
+# Modular deployment workflow
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TERRAFORM_VERSION: '1.6.0'
+
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
+jobs:
+  # Run validation checks
+  validation:
+    name: Run Validation Checks
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && !inputs.skip_validation)
+    uses: ./.github/workflows/_validation.yml
+    secrets:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+  
+  # Plan infrastructure changes
+  plan:
+    name: Plan Infrastructure
+    needs: [validation]
+    if: |
+      always() &&
+      (needs.validation.result == 'success' || needs.validation.result == 'skipped')
+    uses: ./.github/workflows/_infrastructure.yml
+    with:
+      terraform-action: 'plan'
+      terraform-version: '1.6.0'
+      server-location: 'nbg1'
+    secrets:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      FIREWALL_NAME: ${{ secrets.FIREWALL_NAME }}
+      SSH_KEY_IDS: ${{ secrets.SSH_KEY_IDS }}
+      DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      JITSI_ADMIN_USER: ${{ secrets.JITSI_ADMIN_USER }}
+      JITSI_ADMIN_PASSWORD: ${{ secrets.JITSI_ADMIN_PASSWORD }}
+      MATRIX_ADMIN_USER: ${{ secrets.MATRIX_ADMIN_USER }}
+      MATRIX_ADMIN_PASSWORD: ${{ secrets.MATRIX_ADMIN_PASSWORD }}
+      MATRIX_REGISTRATION_SECRET: ${{ secrets.MATRIX_REGISTRATION_SECRET }}
+      MATRIX_POSTGRES_PASSWORD: ${{ secrets.MATRIX_POSTGRES_PASSWORD }}
+      LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+      LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+  
+  # Manual approval gate for push events
+  approval-gate:
+    name: Approve Deployment
+    needs: [plan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    environment:
+      name: production
+    
+    steps:
+      - name: Waiting for approval
+        run: echo "Deployment approved via environment protection rule"
+  
+  # Deploy infrastructure
+  deploy:
+    name: Deploy Infrastructure
+    needs: [plan, approval-gate]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      (needs.approval-gate.result == 'success' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/_infrastructure.yml
+    with:
+      terraform-action: 'apply'
+      terraform-version: '1.6.0'
+      server-location: 'nbg1'
+    secrets:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      FIREWALL_NAME: ${{ secrets.FIREWALL_NAME }}
+      SSH_KEY_IDS: ${{ secrets.SSH_KEY_IDS }}
+      DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      JITSI_ADMIN_USER: ${{ secrets.JITSI_ADMIN_USER }}
+      JITSI_ADMIN_PASSWORD: ${{ secrets.JITSI_ADMIN_PASSWORD }}
+      MATRIX_ADMIN_USER: ${{ secrets.MATRIX_ADMIN_USER }}
+      MATRIX_ADMIN_PASSWORD: ${{ secrets.MATRIX_ADMIN_PASSWORD }}
+      MATRIX_REGISTRATION_SECRET: ${{ secrets.MATRIX_REGISTRATION_SECRET }}
+      MATRIX_POSTGRES_PASSWORD: ${{ secrets.MATRIX_POSTGRES_PASSWORD }}
+      LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+      LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+  
+  # Post-deployment health checks and notifications
+  health-check:
+    name: Health Check & Notify
+    needs: [deploy]
+    if: always() && needs.deploy.result == 'success'
+    uses: ./.github/workflows/_health-check.yml
+    with:
+      server-ip: ${{ needs.deploy.outputs.server-ip }}
+      send-email: true
+    secrets:
+      DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+      EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      STORAGEBOX_HOST: ${{ secrets.STORAGEBOX_HOST }}
+      STORAGEBOX_USER: ${{ secrets.STORAGEBOX_USER }}
+      STORAGEBOX_PASSWORD: ${{ secrets.STORAGEBOX_PASSWORD }}
+
+  # Summary
+  summary:
+    name: Deployment Summary
+    needs: [deploy, health-check]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Display Summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Validation:** ${{ needs.validation.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Plan:** ${{ needs.plan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deploy:** ${{ needs.deploy.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Health Check:** ${{ needs.health-check.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Server IP:** ${{ needs.deploy.outputs.server-ip }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Domain:** ${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Access your services at:" >> $GITHUB_STEP_SUMMARY
+            echo "- https://vpn.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+            echo "- https://meet.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+            echo "- https://chat.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi

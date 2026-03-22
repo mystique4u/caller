@@ -64,6 +64,36 @@ resource "hcloud_firewall" "vpn_services" {
 
   rule {
     direction = "in"
+    protocol  = "tcp"
+    port      = "25"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "587"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "465"
+    source_ips = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+  }
+
+  rule {
+    direction = "in"
     protocol  = "udp"
     port      = "51820"
     source_ips = [
@@ -195,6 +225,63 @@ resource "hcloud_zone_record" "routemaker" {
   type  = "A"
   value = hcloud_server.vm.ipv4_address
 }
+
+# ============================================
+# SMTP Mail Server DNS Records
+# ============================================
+
+# DNS A Record for mail server
+resource "hcloud_zone_record" "mail" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "mail"
+  type  = "A"
+  value = hcloud_server.vm.ipv4_address
+}
+
+# MX Record for email delivery
+resource "hcloud_zone_record" "mx" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "@"
+  type  = "MX"
+  value = "10 mail.${var.domain_name}."
+}
+
+# SPF Record for sender authentication
+resource "hcloud_zone_record" "spf" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "@"
+  type  = "TXT"
+  value = "\"v=spf1 mx ip4:${hcloud_server.vm.ipv4_address} ~all\""
+}
+
+# DMARC Record for email policy
+resource "hcloud_zone_record" "dmarc" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "_dmarc"
+  type  = "TXT"
+  value = "\"v=DMARC1; p=quarantine; rua=mailto:postmaster@${var.domain_name}; pct=100; adkim=s; aspf=s\""
+}
+
+# SPF Record for mail subdomain (HELO name) - fixes SPF_HELO_NONE
+resource "hcloud_zone_record" "mail_spf" {
+  count = var.domain_name != "" ? 1 : 0
+  zone  = data.hcloud_zone.domain[0].name
+  name  = "mail"
+  type  = "TXT"
+  value = "\"v=spf1 a -all\""
+}
+
+# Reverse DNS (PTR) - HELO name must match PTR for inbox delivery
+resource "hcloud_rdns" "mail_ptr" {
+  server_id  = hcloud_server.vm.id
+  ip_address = hcloud_server.vm.ipv4_address
+  dns_ptr    = "mail.${var.domain_name}"
+}
+
 
 # Outputs
 output "public_ip" {

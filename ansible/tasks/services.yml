@@ -9,9 +9,10 @@
 - name: Pull and start Docker services
   shell: |
     cd /opt/services
-    docker compose pull --ignore-pull-failures || true
-    docker compose down || true
-    docker compose up -d
+    # Pull images in parallel (much faster than sequential default)
+    docker compose pull --parallel --ignore-pull-failures || true
+    # Only recreate containers whose image or config changed
+    docker compose up -d --remove-orphans
   args:
     executable: /bin/bash
   retries: 3

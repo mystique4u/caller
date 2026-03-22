@@ -146,6 +146,29 @@ jobs:
             "cd /opt/services/routemaker && \
             docker exec routemaker node manage-users.js create \"${USERNAME}\" \"${PASSWORD}\" --skip-if-exists"
 
+      - name: Create SMTP Email Account
+        env:
+          USERNAME: ${{ github.event.inputs.username }}
+          PASSWORD: ${{ github.event.inputs.password }}
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+        run: |
+          echo "🔧 Creating SMTP email account..."
+          
+          # Check if mailserver is running
+          MAILSERVER_RUNNING=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker ps | grep mailserver | wc -l" || echo "0")
+          
+          if [ "$MAILSERVER_RUNNING" -gt "0" ]; then
+            # Create email account
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+              "docker exec mailserver setup email add \"${USERNAME}@${DOMAIN_NAME}\" \"${PASSWORD}\"" && \
+              echo "✅ Email account created: ${USERNAME}@${DOMAIN_NAME}" || \
+              echo "⏭️  Email account creation skipped (may already exist): ${USERNAME}@${DOMAIN_NAME}"
+          else
+            echo "⏭️  Mailserver not running - skipping email account creation"
+          fi
+
       - name: Summary
         env:
           USERNAME: ${{ github.event.inputs.username }}
@@ -177,10 +200,19 @@ jobs:
           echo "  App URL: https://maker.${DOMAIN_NAME}"
           echo "  Color: Random (assigned automatically)"
           echo ""
+          echo "📧 SMTP Email Account:"
+          echo "  Email: [HIDDEN]@${DOMAIN_NAME}"
+          echo "  SMTP Host: mail.${DOMAIN_NAME}"
+          echo "  SMTP Port: 587 (STARTTLS) or 465 (SSL/TLS)"
+          echo "  Full Guide: docs/SMTP_GUIDE.md"
+          echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📧 Credentials have been created and should be"
           echo "   shared with the user via a secure channel."
+          echo ""
+          echo "🌐 Service URLs:"
           echo "  Matrix: https://chat.${DOMAIN_NAME}"
           echo "  Jitsi: https://meet.${DOMAIN_NAME}"
           echo "  RouteMaker: https://maker.${DOMAIN_NAME}"
+          echo "  SMTP: mail.${DOMAIN_NAME}:587"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

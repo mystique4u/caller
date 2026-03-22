@@ -6,18 +6,19 @@
     state: directory
     mode: '0700'
 
-- name: Generate WireGuard server private key
+- name: Check if wg0.conf already exists (managed by wireguard-ui)
+  stat:
+    path: /etc/wireguard/wg0.conf
+  register: wg0_conf_stat
+
+- name: Generate WireGuard server private key (first deploy only)
   shell: wg genkey
   register: wg_private_key
   changed_when: false
   no_log: true
+  when: not wg0_conf_stat.stat.exists
 
-- name: Generate WireGuard server public key
-  shell: echo "{{ wg_private_key.stdout }}" | wg pubkey
-  register: wg_public_key
-  changed_when: false
-
-- name: Create WireGuard server configuration
+- name: Create WireGuard server configuration (first deploy only)
   copy:
     content: |
       [Interface]
@@ -30,9 +31,104 @@
     dest: /etc/wireguard/wg0.conf
     mode: '0600'
   no_log: true
+  when: not wg0_conf_stat.stat.exists
 
-- name: Start and enable WireGuard
+- name: Deploy idempotent NAT setup script
+  copy:
+    dest: /etc/wireguard/wg-nat.sh
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      # Idempotently configure WireGuard NAT rules - safe to run multiple times
+      # IPv4 FORWARD
+      iptables -C FORWARD -i wg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i wg0 -j ACCEPT
+      iptables -C FORWARD -o wg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -o wg0 -j ACCEPT
+      # IPv4 MASQUERADE
+      iptables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      # IPv6 FORWARD
+      ip6tables -C FORWARD -i wg0 -j ACCEPT 2>/dev/null || ip6tables -A FORWARD -i wg0 -j ACCEPT
+      # IPv6 MASQUERADE
+      ip6tables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      # Docker DOCKER-USER chain (only if Docker has created it)
+      if iptables -L DOCKER-USER >/dev/null 2>&1; then
+        iptables -C DOCKER-USER -i wg0 -j ACCEPT 2>/dev/null || iptables -I DOCKER-USER -i wg0 -j ACCEPT
+        iptables -C DOCKER-USER -o wg0 -j ACCEPT 2>/dev/null || iptables -I DOCKER-USER -o wg0 -j ACCEPT
+      fi
+
+- name: Deploy wg-nat systemd service for persistent NAT on every boot
+  copy:
+    dest: /etc/systemd/system/wg-nat.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=WireGuard NAT and forwarding rules
+      After=network.target docker.service wg-quick@wg0.service
+      Wants=docker.service wg-quick@wg0.service
+      BindsTo=wg-quick@wg0.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/etc/wireguard/wg-nat.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Deploy wg-syncconf service (triggered by path watcher)
+  copy:
+    dest: /etc/systemd/system/wg-syncconf.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Sync wg0.conf changes to WireGuard kernel
+      After=wg-quick@wg0.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash -c 'wg syncconf wg0 <(wg-quick strip /etc/wireguard/wg0.conf)'
+
+- name: Deploy wg-syncconf path watcher (auto-apply on wg0.conf change)
+  copy:
+    dest: /etc/systemd/system/wg-syncconf.path
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Watch wg0.conf for changes
+
+      [Path]
+      PathModified=/etc/wireguard/wg0.conf
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable and start WireGuard
   systemd:
     name: wg-quick@wg0
     state: started
     enabled: yes
+    daemon_reload: yes
+
+- name: Enable and start wg-nat service
+  systemd:
+    name: wg-nat
+    state: started
+    enabled: yes
+
+- name: Enable wg-syncconf path watcher
+  systemd:
+    name: wg-syncconf.path
+    state: started
+    enabled: yes
+
+- name: Apply NAT rules immediately
+  shell: /etc/wireguard/wg-nat.sh
+  changed_when: false
+
+- name: Ensure wireguard-ui global_settings use correct DNS (never 10.0.0.1)
+  shell: |
+    SETTINGS="/opt/services/wireguard-ui/server/global_settings.json"
+    echo "aW1wb3J0IGpzb24sIG9zLCBzeXMKc2V0dGluZ3NfcGF0aCA9IHN5cy5hcmd2WzFdCmRvbWFpbiA9IHN5cy5hcmd2WzJdCm9zLm1ha2VkaXJzKG9zLnBhdGguZGlybmFtZShzZXR0aW5nc19wYXRoKSwgZXhpc3Rfb2s9VHJ1ZSkKaWYgb3MucGF0aC5leGlzdHMoc2V0dGluZ3NfcGF0aCk6CiAgICB3aXRoIG9wZW4oc2V0dGluZ3NfcGF0aCkgYXMgZjoKICAgICAgICBzID0ganNvbi5sb2FkKGYpCmVsc2U6CiAgICBzID0geyJlbmRwb2ludF9hZGRyZXNzIjogZG9tYWluLCAibXR1IjogIjE0MjAiLCAicGVyc2lzdGVudF9rZWVwYWxpdmUiOiAiMjUiLCAiZmlyZXdhbGxfbWFyayI6ICIweGNhNmMiLCAidGFibGUiOiAiYXV0byIsICJjb25maWdfZmlsZV9wYXRoIjogIi9ldGMvd2lyZWd1YXJkL3dnMC5jb25mIn0Kc1siZG5zX3NlcnZlcnMiXSA9IFsiMS4xLjEuMSIsICIxLjAuMC4xIl0Kd2l0aCBvcGVuKHNldHRpbmdzX3BhdGgsICJ3IikgYXMgZjoKICAgIGpzb24uZHVtcChzLCBmLCBpbmRlbnQ9MikKcHJpbnQoIkROUyBzZXQgdG86Iiwgc1siZG5zX3NlcnZlcnMiXSkK" \
+      | base64 -d | python3 - "$SETTINGS" "{{ domain_name }}"
+  args:
+    executable: /bin/bash
+  changed_when: false

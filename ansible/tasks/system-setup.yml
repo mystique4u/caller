@@ -3,15 +3,22 @@
 - name: Wait for server to be ready
   wait_for_connection:
     timeout: 300
-    delay: 5
+    delay: 0
 
-- name: Update apt cache
+- name: Add Docker GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Add Docker repository
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+
+- name: Update apt cache and install all packages in one pass
   apt:
     update_cache: yes
     cache_valid_time: 3600
-
-- name: Install required packages
-  apt:
     name:
       - apt-transport-https
       - ca-certificates
@@ -30,27 +37,11 @@
       - python3-pip
       - sshpass
       - lftp
-    state: present
-
-- name: Add Docker GPG key
-  apt_key:
-    url: https://download.docker.com/linux/ubuntu/gpg
-    state: present
-
-- name: Add Docker repository
-  apt_repository:
-    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
-    state: present
-
-- name: Install Docker
-  apt:
-    name:
       - docker-ce
       - docker-ce-cli
       - containerd.io
       - docker-compose-plugin
     state: present
-    update_cache: yes
 
 - name: Start and enable Docker
   systemd:

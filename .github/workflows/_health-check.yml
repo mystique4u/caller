@@ -1,0 +1,280 @@
+name: Health Check & Notification
+
+on:
+  workflow_call:
+    inputs:
+      server-ip:
+        required: true
+        type: string
+      send-email:
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      DOMAIN_NAME:
+        required: true
+      EMAIL_ADDRESS:
+        required: false
+      SSH_PRIVATE_KEY:
+        required: true
+      STORAGEBOX_HOST:
+        required: false
+      STORAGEBOX_USER:
+        required: false
+      STORAGEBOX_PASSWORD:
+        required: false
+
+jobs:
+  health-check:
+    name: Post-Deployment Health Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      
+      - name: Wait for services
+        run: |
+          echo "⏳ Waiting 2 minutes for services to initialize..."
+          sleep 120
+      
+      - name: Check DNS resolution
+        run: |
+          echo "🔍 Checking DNS resolution..."
+          echo ""
+          echo "=== Service DNS Records ==="
+          dig +short "${{ secrets.DOMAIN_NAME }}" || echo "⚠️ DNS not resolved yet"
+          dig +short "vpn.${{ secrets.DOMAIN_NAME }}" || echo "⚠️ VPN DNS not resolved yet"
+          dig +short "meet.${{ secrets.DOMAIN_NAME }}" || echo "⚠️ Meet DNS not resolved yet"
+          dig +short "mail.${{ secrets.DOMAIN_NAME }}" || echo "⚠️ Mail DNS not resolved yet"
+          
+          echo ""
+          echo "=== Email Authentication DNS Records ==="
+          
+          # Check MX record
+          echo "📧 MX Record:"
+          MX_RECORD=$(dig +short MX "${{ secrets.DOMAIN_NAME }}")
+          if [ -n "$MX_RECORD" ]; then
+            echo "✅ $MX_RECORD"
+          else
+            echo "❌ No MX record found"
+          fi
+          
+          # Check SPF record
+          echo ""
+          echo "🛡️ SPF Record:"
+          SPF_RECORD=$(dig +short TXT "${{ secrets.DOMAIN_NAME }}" | grep "v=spf1")
+          if [ -n "$SPF_RECORD" ]; then
+            echo "✅ $SPF_RECORD"
+          else
+            echo "❌ No SPF record found"
+          fi
+          
+          # Check DKIM record
+          echo ""
+          echo "🔑 DKIM Record:"
+          DKIM_RECORD=$(dig +short TXT "mail._domainkey.${{ secrets.DOMAIN_NAME }}")
+          if [ -n "$DKIM_RECORD" ]; then
+            if echo "$DKIM_RECORD" | grep -q "PLACEHOLDER"; then
+              echo "⚠️ DKIM record exists but contains placeholder (update in progress)"
+            else
+              echo "✅ DKIM record found: ${DKIM_RECORD:0:60}..."
+            fi
+          else
+            echo "❌ No DKIM record found (may take a few minutes to propagate)"
+          fi
+          
+          # Check DMARC record
+          echo ""
+          echo "📋 DMARC Record:"
+          DMARC_RECORD=$(dig +short TXT "_dmarc.${{ secrets.DOMAIN_NAME }}")
+          if [ -n "$DMARC_RECORD" ]; then
+            echo "✅ $DMARC_RECORD"
+          else
+            echo "❌ No DMARC record found"
+          fi
+          
+          echo ""
+          echo "=== DNS Check Complete ==="
+      
+      - name: Check HTTPS services
+        run: |
+          echo "🔍 Checking HTTPS endpoints..."
+          for subdomain in "" "vpn" "meet" "matrix" "chat" "maker"; do
+            url="https://${subdomain:+$subdomain.}${{ secrets.DOMAIN_NAME }}"
+            if curl -sSf -k --connect-timeout 10 "$url" > /dev/null 2>&1; then
+              echo "✅ $url is accessible"
+            else
+              echo "::warning::$url is not responding yet"
+            fi
+          done
+      
+      - name: Health Check Summary
+        run: |
+          echo "## 🎉 Deployment Health Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Deployment completed" >> $GITHUB_STEP_SUMMARY
+          echo "**Server IP:** ${{ inputs.server-ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Service URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **WireGuard VPN:** https://vpn.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Jitsi Meet:** https://meet.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Matrix Synapse:** https://matrix.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Element Web:** https://chat.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **RouteMaker:** https://maker.${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SMTP Server:** mail.${{ secrets.DOMAIN_NAME }}:587" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📧 Email Authentication Status" >> $GITHUB_STEP_SUMMARY
+          
+          # Check MX
+          if dig +short MX "${{ secrets.DOMAIN_NAME }}" | grep -q "."; then
+            echo "- ✅ **MX Record:** Configured" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **MX Record:** Not found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check SPF
+          if dig +short TXT "${{ secrets.DOMAIN_NAME }}" | grep -q "v=spf1"; then
+            echo "- ✅ **SPF Record:** Configured" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **SPF Record:** Not found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check DKIM
+          DKIM_CHECK=$(dig +short TXT "mail._domainkey.${{ secrets.DOMAIN_NAME }}")
+          if [ -n "$DKIM_CHECK" ]; then
+            if echo "$DKIM_CHECK" | grep -q "PLACEHOLDER"; then
+              echo "- ⚠️ **DKIM Record:** Placeholder (update in progress)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ✅ **DKIM Record:** Configured" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- ❌ **DKIM Record:** Not found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check DMARC
+          if dig +short TXT "_dmarc.${{ secrets.DOMAIN_NAME }}" | grep -q "v=DMARC1"; then
+            echo "- ✅ **DMARC Record:** Configured" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **DMARC Record:** Not found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  send-notification:
+    name: Send Deployment Report
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: inputs.send-email
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ inputs.server-ip }} >> ~/.ssh/known_hosts
+      
+      - name: Collect system info
+        env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          STORAGEBOX_HOST: ${{ secrets.STORAGEBOX_HOST }}
+          STORAGEBOX_USER: ${{ secrets.STORAGEBOX_USER }}
+          STORAGEBOX_PASSWORD: ${{ secrets.STORAGEBOX_PASSWORD }}
+        run: |
+          # Server disk usage
+          ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} \
+            "df -h --output=source,size,used,avail,pcent,target | grep -v tmpfs | grep -v overlay | grep -v udev" \
+            > /tmp/server-df.txt 2>&1 || echo "(unable to get server disk info)" > /tmp/server-df.txt
+
+          # DKIM public key — extract and output clean single-line value for DNS copy-paste
+          RAW_DKIM=$(ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} \
+            "docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/$DOMAIN_NAME/mail.txt 2>/dev/null" \
+            2>&1 || true)
+          if [ -n "$RAW_DKIM" ]; then
+            # Concatenate all quoted chunks into one clean value
+            CLEAN_DKIM=$(echo "$RAW_DKIM" | grep -oP '(?<=")[^"]+(?=")' | tr -d '\n' | sed 's/[[:space:]]*$//')
+            {
+              echo "Host : mail._domainkey.$DOMAIN_NAME"
+              echo "Type : TXT"
+              echo "Value (paste this entire line into DNS):"
+              echo "$CLEAN_DKIM"
+            } > /tmp/dkim-key.txt
+          else
+            echo "(DKIM key not yet available — mailserver may still be starting)" > /tmp/dkim-key.txt
+          fi
+
+          # Storagebox free space via sshpass (port 23, no lftp needed)
+          if [ -n "$STORAGEBOX_HOST" ] && [ -n "$STORAGEBOX_USER" ] && [ -n "$STORAGEBOX_PASSWORD" ]; then
+            sudo apt-get install -y -qq sshpass 2>/dev/null
+            sshpass -p "$STORAGEBOX_PASSWORD" ssh \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=15 \
+              -p 23 "$STORAGEBOX_USER@$STORAGEBOX_HOST" df -h \
+              > /tmp/storagebox-df.txt 2>&1 \
+              || echo "(storagebox connection failed)" > /tmp/storagebox-df.txt
+          else
+            echo "(STORAGEBOX credentials not configured)" > /tmp/storagebox-df.txt
+          fi
+
+      - name: Setup SMTP & Send Report
+        env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+        run: |
+          SERVER_IP="${{ inputs.server-ip }}"
+
+          # Ensure noreply account exists
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP \
+            "docker ps | grep -q mailserver && \
+             docker exec mailserver setup email add 'noreply@$DOMAIN_NAME' \$(openssl rand -base64 24) 2>&1 || true" || true
+
+          # Build the combined report on the runner
+          {
+            echo "Deployment completed successfully!"
+            echo ""
+            echo "Server IP : $SERVER_IP"
+            echo "Domain    : $DOMAIN_NAME"
+            echo "Time (UTC): $(date -u)"
+            echo ""
+            echo "── SERVICE URLS ──────────────────────────────────────────────"
+            echo "  WireGuard VPN : https://vpn.$DOMAIN_NAME"
+            echo "  Jitsi Meet    : https://meet.$DOMAIN_NAME"
+            echo "  Matrix Synapse: https://matrix.$DOMAIN_NAME"
+            echo "  Element Web   : https://chat.$DOMAIN_NAME"
+            echo "  RouteMaker    : https://maker.$DOMAIN_NAME"
+            echo "  SMTP          : mail.$DOMAIN_NAME:587"
+            echo ""
+            echo "── SERVER DISK USAGE ─────────────────────────────────────────"
+            cat /tmp/server-df.txt
+            echo ""
+            echo "── STORAGEBOX FREE SPACE ─────────────────────────────────────"
+            cat /tmp/storagebox-df.txt
+            echo ""
+            echo "── DKIM PUBLIC KEY ───────────────────────────────────────────"
+            echo "Host : mail._domainkey.$DOMAIN_NAME"
+            echo "Type : TXT"
+            cat /tmp/dkim-key.txt
+            echo ""
+            echo "Next steps:"
+            echo "  1. Copy the DKIM value above and add it as a TXT record in DNS"
+            echo "  2. Verify: dig +short TXT mail._domainkey.$DOMAIN_NAME"
+            echo "─────────────────────────────────────────────────────────────"
+          } > /tmp/deployment-report.txt
+
+          cat /tmp/deployment-report.txt
+
+          # Send via deployed mailserver
+          if [ -n "$EMAIL_ADDRESS" ]; then
+            scp -o StrictHostKeyChecking=no /tmp/deployment-report.txt root@$SERVER_IP:/tmp/deployment-report.txt
+            ssh -o StrictHostKeyChecking=no root@$SERVER_IP \
+              "python3 /opt/services/mailserver/send-email.py \
+                '$EMAIL_ADDRESS' \
+                'Deployment Report - $DOMAIN_NAME' \
+                /tmp/deployment-report.txt" \
+            && echo "✅ Report emailed to $EMAIL_ADDRESS" \
+            || echo "⚠️  Email send failed — report is in workflow logs above"
+          else
+            echo "📧 EMAIL_ADDRESS not configured — skipping email"
+          fi
