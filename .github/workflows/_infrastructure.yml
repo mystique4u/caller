@@ -182,39 +182,21 @@ jobs:
           echo "==========================================" >> /tmp/dkim-key.txt
           if [ -n "$EMAIL_ADDRESS" ]; then
             echo "📧 Sending DKIM key to $EMAIL_ADDRESS via deployed mailserver..."
-            ssh -o StrictHostKeyChecking=no root@$SERVER_IP "
-              if ! command -v swaks &>/dev/null; then
-                apt-get install -y -qq swaks libnet-ssleay-perl 2>/dev/null || true
-              fi
-              swaks \\
-                --to '$EMAIL_ADDRESS' \\
-                --from 'noreply@$DOMAIN_NAME' \\
-                --server localhost \\
-                --port 25 \\
-                --header 'Subject: DKIM Key for $DOMAIN_NAME' \\
-                --body \"$(cat /tmp/dkim-key.txt 2>/dev/null || echo 'DKIM key not found')\" \\
-                2>&1 || echo '⚠️  swaks failed, trying python3...'
-              python3 -c \"
-import smtplib
-from email.mime.text import MIMEText
-try:
-    with open('/tmp/dkim-key.txt') as f:
-        body = f.read()
-except:
-    body = 'DKIM key could not be read'
-msg = MIMEText(body)
-msg['Subject'] = 'DKIM Key for $DOMAIN_NAME'
-msg['From'] = 'noreply@$DOMAIN_NAME'
-msg['To'] = '$EMAIL_ADDRESS'
-try:
-    s = smtplib.SMTP('localhost', 25, timeout=10)
-    s.sendmail('noreply@$DOMAIN_NAME', ['$EMAIL_ADDRESS'], msg.as_string())
-    s.quit()
-    print('Email sent via python3 SMTP')
-except Exception as e:
-    print(f'python3 SMTP failed: {e}')
-\" 2>&1
-            " || echo "⚠️  Could not send DKIM email - key is in the workflow logs above"
+            scp -o StrictHostKeyChecking=no /tmp/dkim-key.txt root@$SERVER_IP:/tmp/dkim-key.txt
+            # Decode and run a Python SMTP sender on the server (base64-encoded to avoid YAML issues)
+            SEND_SCRIPT="aW1wb3J0IHN5cywgc210cGxpYgpmcm9tIGVtYWlsLm1pbWUudGV4dCBpbXBvcnQgTUlNRVRleHQKdG8sIGRvbWFpbiA9IHN5cy5hcmd2WzFdLCBzeXMuYXJndlsyXQp0cnk6CiAgICBib2R5ID0gb3BlbigiL3RtcC9kaWttLWtleS50eHQiKS5yZWFkKCkKZXhjZXB0IEV4Y2VwdGlvbjoKICAgIGJvZHkgPSAiRElLTSBrZXkgY291bGQgbm90IGJlIHJlYWQiCm1zZyA9IE1JTUVUZXh0KGJvZHkpCm1zZ1siU3ViamVjdCJdID0gIkRJS00gS2V5IGZvciAiICsgZG9tYWluCm1zZ1siRnJvbSJdID0gIm5vcmVwbHlAIiArIGRvbWFpbgptc2dbIlRvIl0gPSB0bwp0cnk6CiAgICBzID0gc210cGxpYi5TTVRQKCJsb2NhbGhvc3QiLCAyNSwgdGltZW91dD0xMCkKICAgIHMuc2VuZG1haWwobXNnWyJGcm9tIl0sIFt0b10sIG1zZy5hc19zdHJpbmcoKSkKICAgIHMucXVpdCgpCiAgICBwcmludCgiRW1haWwgc2VudCB2aWEgcHl0aG9uMyBTTVRQIikKZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgcHJpbnQoInB5dGhvbjMgU01UUCBmYWlsZWQ6ICIgKyBzdHIoZSkpCg=="
+            ssh -o StrictHostKeyChecking=no root@$SERVER_IP \
+              "echo '$SEND_SCRIPT' | base64 -d > /tmp/send-dkim-email.py; \
+               command -v swaks &>/dev/null || apt-get install -y -qq swaks libnet-ssleay-perl 2>/dev/null || true; \
+               if command -v swaks &>/dev/null; then \
+                 swaks --to '$EMAIL_ADDRESS' --from 'noreply@$DOMAIN_NAME' --server localhost --port 25 \
+                   --header 'Subject: DKIM Key for $DOMAIN_NAME' \
+                   --body \"\$(cat /tmp/dkim-key.txt)\" 2>&1 \
+                 && echo 'Email sent via swaks' \
+                 || python3 /tmp/send-dkim-email.py '$EMAIL_ADDRESS' '$DOMAIN_NAME'; \
+               else \
+                 python3 /tmp/send-dkim-email.py '$EMAIL_ADDRESS' '$DOMAIN_NAME'; \
+               fi" || echo "⚠️  Could not send DKIM email - key is in the workflow logs above"
             echo "✅ DKIM key email step completed"
           else
             echo "⚠️ EMAIL_ADDRESS not configured, DKIM key not sent via email"

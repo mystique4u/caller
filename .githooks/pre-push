@@ -1,0 +1,5 @@
+#!/bin/bash
+# Git pre-push hook — runs all validation checks before pushing
+# Installed via: git config core.hooksPath .githooks
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+exec "$REPO_ROOT/scripts/pre-push-check.sh"
