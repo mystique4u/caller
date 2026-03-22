@@ -181,12 +181,41 @@ jobs:
           echo "Value: $DKIM_RECORD" >> /tmp/dkim-key.txt
           echo "==========================================" >> /tmp/dkim-key.txt
           if [ -n "$EMAIL_ADDRESS" ]; then
-            echo "📧 Sending DKIM key to $EMAIL_ADDRESS..."
-            echo "Subject: DKIM Key for $DOMAIN_NAME" > /tmp/dkim-mail.txt
-            echo "" >> /tmp/dkim-mail.txt
-            cat /tmp/dkim-key.txt >> /tmp/dkim-mail.txt
-            sendmail "$EMAIL_ADDRESS" < /tmp/dkim-mail.txt || echo "⚠️ Failed to send DKIM key via email"
-            echo "✅ DKIM key sent to $EMAIL_ADDRESS"
+            echo "📧 Sending DKIM key to $EMAIL_ADDRESS via deployed mailserver..."
+            ssh -o StrictHostKeyChecking=no root@$SERVER_IP "
+              if ! command -v swaks &>/dev/null; then
+                apt-get install -y -qq swaks libnet-ssleay-perl 2>/dev/null || true
+              fi
+              swaks \\
+                --to '$EMAIL_ADDRESS' \\
+                --from 'noreply@$DOMAIN_NAME' \\
+                --server localhost \\
+                --port 25 \\
+                --header 'Subject: DKIM Key for $DOMAIN_NAME' \\
+                --body \"$(cat /tmp/dkim-key.txt 2>/dev/null || echo 'DKIM key not found')\" \\
+                2>&1 || echo '⚠️  swaks failed, trying python3...'
+              python3 -c \"
+import smtplib
+from email.mime.text import MIMEText
+try:
+    with open('/tmp/dkim-key.txt') as f:
+        body = f.read()
+except:
+    body = 'DKIM key could not be read'
+msg = MIMEText(body)
+msg['Subject'] = 'DKIM Key for $DOMAIN_NAME'
+msg['From'] = 'noreply@$DOMAIN_NAME'
+msg['To'] = '$EMAIL_ADDRESS'
+try:
+    s = smtplib.SMTP('localhost', 25, timeout=10)
+    s.sendmail('noreply@$DOMAIN_NAME', ['$EMAIL_ADDRESS'], msg.as_string())
+    s.quit()
+    print('Email sent via python3 SMTP')
+except Exception as e:
+    print(f'python3 SMTP failed: {e}')
+\" 2>&1
+            " || echo "⚠️  Could not send DKIM email - key is in the workflow logs above"
+            echo "✅ DKIM key email step completed"
           else
             echo "⚠️ EMAIL_ADDRESS not configured, DKIM key not sent via email"
           fi

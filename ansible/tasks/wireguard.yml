@@ -31,8 +31,61 @@
     mode: '0600'
   no_log: true
 
-- name: Start and enable WireGuard
+- name: Deploy idempotent NAT setup script
+  copy:
+    dest: /etc/wireguard/wg-nat.sh
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      # Idempotently configure WireGuard NAT rules - safe to run multiple times
+      # IPv4 FORWARD
+      iptables -C FORWARD -i wg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i wg0 -j ACCEPT
+      iptables -C FORWARD -o wg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -o wg0 -j ACCEPT
+      # IPv4 MASQUERADE
+      iptables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      # IPv6 FORWARD
+      ip6tables -C FORWARD -i wg0 -j ACCEPT 2>/dev/null || ip6tables -A FORWARD -i wg0 -j ACCEPT
+      # IPv6 MASQUERADE
+      ip6tables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      # Docker DOCKER-USER chain (only if Docker has created it)
+      if iptables -L DOCKER-USER >/dev/null 2>&1; then
+        iptables -C DOCKER-USER -i wg0 -j ACCEPT 2>/dev/null || iptables -I DOCKER-USER -i wg0 -j ACCEPT
+        iptables -C DOCKER-USER -o wg0 -j ACCEPT 2>/dev/null || iptables -I DOCKER-USER -o wg0 -j ACCEPT
+      fi
+
+- name: Deploy wg-nat systemd service for persistent NAT on every boot
+  copy:
+    dest: /etc/systemd/system/wg-nat.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=WireGuard NAT and forwarding rules
+      After=network.target docker.service wg-quick@wg0.service
+      Wants=docker.service wg-quick@wg0.service
+      BindsTo=wg-quick@wg0.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/etc/wireguard/wg-nat.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable and start WireGuard
   systemd:
     name: wg-quick@wg0
     state: started
     enabled: yes
+    daemon_reload: yes
+
+- name: Enable and start wg-nat service
+  systemd:
+    name: wg-nat
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Apply NAT rules immediately
+  shell: /etc/wireguard/wg-nat.sh
+  changed_when: false
