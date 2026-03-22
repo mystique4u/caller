@@ -126,6 +126,7 @@ networks:
 #    - XMPP_MUC_MODULES=matrix_webhook
 #    - MATRIX_WEBHOOK_URL=http://jitsi-bot:3001/webhook
 #    - MATRIX_WEBHOOK_SECRET=YOUR_WEBHOOK_SECRET
+#    - PROSODY_TRUSTED_PROXIES=127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
 
 # 6. Patch jitsi-web nginx to forward real client IPs
 docker exec jitsi-web sed -i \
@@ -245,6 +246,23 @@ The `address` line **must** appear before the `[entryPoints.websecure.forwardedH
 ## Troubleshooting
 
 ### Bot shows Docker-internal IPs (172.x.x.x)
+Real IP delivery requires two things working together:
+
+**1. Prosody must trust Docker subnets** (`PROSODY_TRUSTED_PROXIES`)
+This is the primary fix — it tells Prosody to read `X-Forwarded-For` from nginx and use the real IP as `session.ip`. Without it, Prosody sees nginx's container IP regardless of headers.
+
+Verify it's set:
+```bash
+docker exec jitsi-prosody grep -A10 "trusted_proxies" /config/prosody.cfg.lua
+```
+Expected output should include `172.16.0.0/12` and `10.0.0.0/8`. If missing, add to docker-compose.yml under jitsi-prosody and recreate:
+```bash
+# Add to jitsi-prosody environment in /opt/services/docker-compose.yml:
+#   - PROSODY_TRUSTED_PROXIES=127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
+docker compose up -d --force-recreate jitsi-prosody
+```
+
+**2. jitsi-web nginx must forward the header**
 The nginx `X-Forwarded-For` patch may not have been applied (e.g. after a jitsi-web container restart). Re-apply:
 ```bash
 docker exec jitsi-web sed -i \
@@ -252,7 +270,7 @@ docker exec jitsi-web sed -i \
   /config/nginx/meet.conf
 docker exec jitsi-web nginx -s reload
 ```
-The deploy pipeline re-applies this idempotently on every run.
+The deploy pipeline re-applies both fixes idempotently on every run.
 
 ### Participants show as hex IDs (e.g. `fe0b4f6e`)
 Jitsi auth is likely not enabled or the user joined as a guest. The bot uses `bare_jid` (authenticated username) when available. Enable `AUTH_TYPE=internal` in the Jitsi docker-compose config and ensure users are authenticated before joining.
