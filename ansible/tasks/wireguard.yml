@@ -72,6 +72,33 @@
       [Install]
       WantedBy=multi-user.target
 
+- name: Deploy wg-syncconf service (triggered by path watcher)
+  copy:
+    dest: /etc/systemd/system/wg-syncconf.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Sync wg0.conf changes to WireGuard kernel
+      After=wg-quick@wg0.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash -c 'wg syncconf wg0 <(wg-quick strip /etc/wireguard/wg0.conf)'
+
+- name: Deploy wg-syncconf path watcher (auto-apply on wg0.conf change)
+  copy:
+    dest: /etc/systemd/system/wg-syncconf.path
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Watch wg0.conf for changes
+
+      [Path]
+      PathModified=/etc/wireguard/wg0.conf
+
+      [Install]
+      WantedBy=multi-user.target
+
 - name: Enable and start WireGuard
   systemd:
     name: wg-quick@wg0
@@ -84,7 +111,12 @@
     name: wg-nat
     state: started
     enabled: yes
-    daemon_reload: yes
+
+- name: Enable wg-syncconf path watcher
+  systemd:
+    name: wg-syncconf.path
+    state: started
+    enabled: yes
 
 - name: Apply NAT rules immediately
   shell: /etc/wireguard/wg-nat.sh
