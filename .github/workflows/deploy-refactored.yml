@@ -74,7 +74,6 @@ jobs:
       MATRIX_POSTGRES_PASSWORD: ${{ secrets.MATRIX_POSTGRES_PASSWORD }}
       LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
       LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
-      TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
   
   # Manual approval gate for push events
   approval-gate:
@@ -118,7 +117,6 @@ jobs:
       MATRIX_POSTGRES_PASSWORD: ${{ secrets.MATRIX_POSTGRES_PASSWORD }}
       LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
       LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
-      TURN_SHARED_SECRET: ${{ secrets.TURN_SHARED_SECRET }}
   
   # Post-deployment health checks and notifications
   health-check:
