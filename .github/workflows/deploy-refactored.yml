@@ -133,7 +133,10 @@ jobs:
       DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
       EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-  
+      STORAGEBOX_HOST: ${{ secrets.STORAGEBOX_HOST }}
+      STORAGEBOX_USER: ${{ secrets.STORAGEBOX_USER }}
+      STORAGEBOX_PASSWORD: ${{ secrets.STORAGEBOX_PASSWORD }}
+
   # Summary
   summary:
     name: Deployment Summary
