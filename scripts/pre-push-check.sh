@@ -146,6 +146,45 @@ if [ -d "routemaker" ] && command -v node &>/dev/null; then
   python3 -m json.tool routemaker/package.json >/dev/null 2>&1 && pass "package.json" || fail "package.json"
 fi
 
+# ── 7. STORAGEBOX ────────────────────────────────────────────────────────────
+print_section "7️⃣  STORAGEBOX"
+# Source local .env if present (for STORAGEBOX_* vars)
+[ -f "$REPO_ROOT/.env" ] && source "$REPO_ROOT/.env"
+if [ -n "$STORAGEBOX_HOST" ] && [ -n "$STORAGEBOX_USER" ] && [ -n "$STORAGEBOX_PASSWORD" ]; then
+  if command -v sshpass &>/dev/null; then
+    DF_OUTPUT=$(sshpass -p "$STORAGEBOX_PASSWORD" ssh \
+      -o StrictHostKeyChecking=no \
+      -o ConnectTimeout=10 \
+      -p 23 "$STORAGEBOX_USER@$STORAGEBOX_HOST" df -h 2>&1)
+    RC=$?
+  elif command -v lftp &>/dev/null; then
+    DF_OUTPUT=$(lftp -u "$STORAGEBOX_USER,$STORAGEBOX_PASSWORD" -p 23 "sftp://$STORAGEBOX_HOST" 2>&1 << 'LEOF'
+set sftp:auto-confirm yes
+set ssl:verify-certificate no
+set net:timeout 10
+set net:max-retries 1
+du -s /home
+bye
+LEOF
+)
+    RC=$?
+  else
+    warn "sshpass/lftp not installed — skipping storagebox check (apt install sshpass)"
+    ((CHECKS_PASSED++))
+    RC=99
+  fi
+  if [ $RC -eq 0 ]; then
+    pass "Storagebox reachable ($STORAGEBOX_HOST)"
+    echo "$DF_OUTPUT"
+  elif [ $RC -ne 99 ]; then
+    fail "Storagebox connection failed"
+    echo "$DF_OUTPUT" | head -5
+  fi
+else
+  warn "STORAGEBOX_* vars not set — skipping (export STORAGEBOX_HOST/USER/PASSWORD or add to .env)"
+  ((CHECKS_PASSED++))
+fi
+
 # ── SUMMARY ───────────────────────────────────────────────────────────────────
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"
