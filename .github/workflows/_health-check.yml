@@ -17,6 +17,12 @@ on:
         required: false
       SSH_PRIVATE_KEY:
         required: true
+      STORAGEBOX_HOST:
+        required: false
+      STORAGEBOX_USER:
+        required: false
+      STORAGEBOX_PASSWORD:
+        required: false
 
 jobs:
   health-check:
@@ -170,69 +176,96 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ inputs.server-ip }} >> ~/.ssh/known_hosts
       
-      - name: Setup SMTP & Send Report
+      - name: Collect system info
+        env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          STORAGEBOX_HOST: ${{ secrets.STORAGEBOX_HOST }}
+          STORAGEBOX_USER: ${{ secrets.STORAGEBOX_USER }}
+          STORAGEBOX_PASSWORD: ${{ secrets.STORAGEBOX_PASSWORD }}
         run: |
-          # Create noreply account and generate report
-          ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} "
-            set -e
-            
-            # Setup noreply email if mailserver is running
-            NOREPLY_PASS=''
-            if docker ps | grep mailserver > /dev/null; then
-              echo '📧 Setting up noreply email account...'
-              NOREPLY_PASS=\$(openssl rand -base64 24)
-              docker exec mailserver setup email add 'noreply@${{ secrets.DOMAIN_NAME }}' \"\$NOREPLY_PASS\" 2>&1 || true
-              docker exec mailserver setup config dkim 2>&1 || true
-              echo 'NOREPLY_PASS='\$NOREPLY_PASS > /root/.noreply-credentials
-              chmod 600 /root/.noreply-credentials
-              echo '✅ Noreply account created'
-            fi
-            
-            # Create deployment report
-            cat > /tmp/deployment-report.txt <<'REPORT'
-          Deployment completed successfully!
-          
-          Server: ${{ inputs.server-ip }}
-          Domain: ${{ secrets.DOMAIN_NAME }}
-          Time: $(date -u)
-          
-          Services:
-          - WireGuard VPN: https://vpn.${{ secrets.DOMAIN_NAME }}
-          - Jitsi Meet: https://meet.${{ secrets.DOMAIN_NAME }}
-          - Matrix: https://matrix.${{ secrets.DOMAIN_NAME }}
-          - Element: https://chat.${{ secrets.DOMAIN_NAME }}
-          - RouteMaker: https://maker.${{ secrets.DOMAIN_NAME }}
-          - SMTP: mail.${{ secrets.DOMAIN_NAME }}:587
-          
-          Next steps:
-          1. Verify DNS propagation
-          2. Generate DKIM keys: /opt/services/mailserver/generate-dkim.sh
-          3. Add DKIM TXT record to DNS
-          
-          See docs/SMTP_GUIDE.md for details.
-          REPORT
-            
-            echo '✅ Deployment report created'
-            
-            # Send email if configured
-            if [ -n '${{ secrets.EMAIL_ADDRESS }}' ] && [ '${{ inputs.send-email }}' = 'true' ]; then
-              echo '📧 Sending deployment report to ${{ secrets.EMAIL_ADDRESS }}...'
-              
-              # Send directly via mailserver container port (already exposed on host:25)
-              FROM_EMAIL='noreply@${{ secrets.DOMAIN_NAME }}' \
-              python3 /opt/services/mailserver/send-email.py \
-                '${{ secrets.EMAIL_ADDRESS }}' \
-                'Deployment Report - ${{ secrets.DOMAIN_NAME }}' \
-                /tmp/deployment-report.txt
-              
-              if [ \$? -eq 0 ]; then
-                echo '✅ Email sent successfully to ${{ secrets.EMAIL_ADDRESS }}'
-              else
-                echo '⚠️  Email sending failed, but deployment was successful'
-                echo '⚠️  Debug: Check if mailserver is running: docker ps | grep mailserver'
-                echo '⚠️  Debug: Check mailserver logs: docker logs mailserver'
-              fi
-            else
-              echo '📧 Email notification skipped (EMAIL_ADDRESS not configured or send-email=false)'
-            fi
-          "
+          # Server disk usage
+          ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} \
+            "df -h --output=source,size,used,avail,pcent,target | grep -v tmpfs | grep -v overlay | grep -v udev" \
+            > /tmp/server-df.txt 2>&1 || echo "(unable to get server disk info)" > /tmp/server-df.txt
+
+          # DKIM public key
+          ssh -o StrictHostKeyChecking=no root@${{ inputs.server-ip }} \
+            "docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/$DOMAIN_NAME/mail.txt 2>/dev/null \
+             || echo '(DKIM key not yet available — mailserver may still be starting)'" \
+            > /tmp/dkim-key.txt 2>&1 || echo "(unable to fetch DKIM key)" > /tmp/dkim-key.txt
+
+          # Storagebox free space (lftp direct from runner, port 23)
+          if [ -n "$STORAGEBOX_HOST" ] && [ -n "$STORAGEBOX_USER" ] && [ -n "$STORAGEBOX_PASSWORD" ]; then
+            lftp -u "$STORAGEBOX_USER,$STORAGEBOX_PASSWORD" -p 23 "sftp://$STORAGEBOX_HOST" \
+              > /tmp/storagebox-df.txt 2>&1 << LEOF || echo "(lftp command failed)" >> /tmp/storagebox-df.txt
+          set sftp:auto-confirm yes
+          set ssl:verify-certificate no
+          set net:timeout 15
+          set net:max-retries 1
+          df
+          bye
+          LEOF
+          else
+            echo "(STORAGEBOX credentials not configured)" > /tmp/storagebox-df.txt
+          fi
+
+      - name: Setup SMTP & Send Report
+        env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+        run: |
+          SERVER_IP="${{ inputs.server-ip }}"
+
+          # Ensure noreply account exists
+          ssh -o StrictHostKeyChecking=no root@$SERVER_IP \
+            "docker ps | grep -q mailserver && \
+             docker exec mailserver setup email add 'noreply@$DOMAIN_NAME' \$(openssl rand -base64 24) 2>&1 || true" || true
+
+          # Build the combined report on the runner
+          {
+            echo "Deployment completed successfully!"
+            echo ""
+            echo "Server IP : $SERVER_IP"
+            echo "Domain    : $DOMAIN_NAME"
+            echo "Time (UTC): $(date -u)"
+            echo ""
+            echo "── SERVICE URLS ──────────────────────────────────────────────"
+            echo "  WireGuard VPN : https://vpn.$DOMAIN_NAME"
+            echo "  Jitsi Meet    : https://meet.$DOMAIN_NAME"
+            echo "  Matrix Synapse: https://matrix.$DOMAIN_NAME"
+            echo "  Element Web   : https://chat.$DOMAIN_NAME"
+            echo "  RouteMaker    : https://maker.$DOMAIN_NAME"
+            echo "  SMTP          : mail.$DOMAIN_NAME:587"
+            echo ""
+            echo "── SERVER DISK USAGE ─────────────────────────────────────────"
+            cat /tmp/server-df.txt
+            echo ""
+            echo "── STORAGEBOX FREE SPACE ─────────────────────────────────────"
+            cat /tmp/storagebox-df.txt
+            echo ""
+            echo "── DKIM PUBLIC KEY ───────────────────────────────────────────"
+            echo "Host : mail._domainkey.$DOMAIN_NAME"
+            echo "Type : TXT"
+            cat /tmp/dkim-key.txt
+            echo ""
+            echo "Next steps:"
+            echo "  1. Copy the DKIM value above and add it as a TXT record in DNS"
+            echo "  2. Verify: dig +short TXT mail._domainkey.$DOMAIN_NAME"
+            echo "─────────────────────────────────────────────────────────────"
+          } > /tmp/deployment-report.txt
+
+          cat /tmp/deployment-report.txt
+
+          # Send via deployed mailserver
+          if [ -n "$EMAIL_ADDRESS" ]; then
+            scp -o StrictHostKeyChecking=no /tmp/deployment-report.txt root@$SERVER_IP:/tmp/deployment-report.txt
+            ssh -o StrictHostKeyChecking=no root@$SERVER_IP \
+              "python3 /opt/services/mailserver/send-email.py \
+                '$EMAIL_ADDRESS' \
+                'Deployment Report - $DOMAIN_NAME' \
+                /tmp/deployment-report.txt" \
+            && echo "✅ Report emailed to $EMAIL_ADDRESS" \
+            || echo "⚠️  Email send failed — report is in workflow logs above"
+          else
+            echo "📧 EMAIL_ADDRESS not configured — skipping email"
+          fi
