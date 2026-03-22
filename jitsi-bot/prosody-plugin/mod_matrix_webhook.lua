@@ -35,6 +35,24 @@ local function participant_name(occupant)
   return display_name(occupant.nick)
 end
 
+-- Real client IP: prefer X-Forwarded-For set by Traefik/jitsi-web proxy,
+-- fall back to socket IP (which would be a Docker-internal address)
+local function client_ip(origin)
+  if not origin then return nil end
+  local headers = origin.headers or (origin.request and origin.request.headers)
+  if headers then
+    local xff = headers["x-forwarded-for"] or headers["X-Forwarded-For"]
+    if xff then
+      -- XFF can be comma-separated list; first entry is the original client
+      local ip = xff:match("^%s*([^,%s]+)")
+      if ip then return ip end
+    end
+    local xri = headers["x-real-ip"] or headers["X-Real-IP"]
+    if xri then return xri end
+  end
+  return origin.ip  -- socket IP fallback
+end
+
 local function post_event(payload)
   local body    = json.encode(payload)
   local headers = { ["Content-Type"] = "application/json" }
@@ -78,7 +96,7 @@ module:hook("muc-occupant-joined", function(event)
     event       = "participant_joined",
     room        = room_name(event.room.jid),
     participant = participant_name(event.occupant),
-    ip          = origin and origin.ip or nil,
+    ip          = client_ip(origin),
     timestamp   = os.time(),
   })
 end)
