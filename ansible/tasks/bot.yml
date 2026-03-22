@@ -1,0 +1,18 @@
+---
+# Jitsi Matrix Bot Setup Tasks
+
+- name: Copy jitsi-bot application files
+  synchronize:
+    src: "{{ playbook_dir }}/../jitsi-bot/"
+    dest: /opt/services/jitsi-bot/
+    delete: yes
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.git"
+
+- name: Copy Prosody webhook plugin to custom plugins directory
+  copy:
+    src: /opt/services/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua
+    dest: /opt/services/jitsi/prosody/prosody-plugins-custom/mod_matrix_webhook.lua
+    mode: '0644'
+    remote_src: yes

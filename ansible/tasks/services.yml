@@ -61,6 +61,17 @@
   changed_when: "'User ID already taken' not in matrix_user_result.stdout and matrix_user_result.rc == 0"
   when: matrix_admin_user is defined and matrix_admin_password is defined
 
+- name: Create Matrix bot user
+  shell: |
+    docker exec matrix-synapse register_new_matrix_user -u {{ matrix_bot_user }} -p {{ matrix_bot_password }} --no-admin -c /data/homeserver.yaml http://localhost:8008
+  register: matrix_bot_result
+  until: matrix_bot_result.rc == 0 or 'User ID already taken' in matrix_bot_result.stdout
+  retries: 3
+  delay: 10
+  failed_when: false
+  changed_when: "'User ID already taken' not in matrix_bot_result.stdout and matrix_bot_result.rc == 0"
+  when: matrix_bot_user is defined and matrix_bot_password is defined
+
 - name: Copy health check script to server
   copy:
     src: "{{ playbook_dir }}/../scripts/health-check.sh"
