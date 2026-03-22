@@ -76,6 +76,13 @@ jobs:
           terraform-version: ${{ inputs.terraform-version }}
           tf-api-token: ${{ secrets.TF_API_TOKEN }}
       
+      - name: Clean up stale Terraform state entries
+        working-directory: ./terraform
+        run: |
+          terraform init -input=false
+          # Remove stale DKIM record from state (resource removed from .tf files but still tracked in state)
+          terraform state rm 'hcloud_zone_record.dkim[0]' 2>/dev/null || true
+
       - name: Terraform Plan
         id: plan
         working-directory: ./terraform
