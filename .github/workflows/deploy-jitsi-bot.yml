@@ -69,6 +69,25 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${SERVER_IP} >> ~/.ssh/known_hosts
 
+      - name: Validate required secrets
+        env:
+          MATRIX_BOT_PASSWORD:   ${{ secrets.MATRIX_BOT_PASSWORD }}
+          MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
+          MATRIX_BOT_ROOM:       ${{ secrets.MATRIX_BOT_ROOM }}
+          DOMAIN_NAME:           ${{ secrets.DOMAIN_NAME }}
+        run: |
+          MISSING=()
+          [[ -z "$MATRIX_BOT_PASSWORD" ]]   && MISSING+=("MATRIX_BOT_PASSWORD")
+          [[ -z "$MATRIX_WEBHOOK_SECRET" ]] && MISSING+=("MATRIX_WEBHOOK_SECRET")
+          [[ -z "$MATRIX_BOT_ROOM" ]]       && MISSING+=("MATRIX_BOT_ROOM")
+          [[ -z "$DOMAIN_NAME" ]]           && MISSING+=("DOMAIN_NAME")
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "❌ Missing required GitHub Secrets: ${MISSING[*]}"
+            echo "   Add them at: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "✅ All required secrets present"
+
       - name: Sync bot files to server
         env:
           SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
@@ -175,7 +194,9 @@ jobs:
               echo "Adding webhook env vars to docker-compose.yml..."
               sed -i "/- ENABLE_AUTH=1/a\\      - XMPP_MUC_MODULES=matrix_webhook\\n      - MATRIX_WEBHOOK_URL=http://jitsi-bot:3001/webhook\\n      - MATRIX_WEBHOOK_SECRET=${MATRIX_WEBHOOK_SECRET}" "\$COMPOSE"
             else
-              echo "Prosody env vars already present ✅"
+              echo "Prosody env vars already present — updating secret value ✅"
+              # Always overwrite the secret value in case it was blank or changed
+              sed -i "s|MATRIX_WEBHOOK_SECRET=.*|MATRIX_WEBHOOK_SECRET=${MATRIX_WEBHOOK_SECRET}|g" "\$COMPOSE"
             fi
 
             # Idempotently add PROSODY_TRUSTED_PROXIES so Prosody uses real client IPs
