@@ -76,6 +76,8 @@ jobs:
       LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
       MATRIX_BOT_USER: ${{ secrets.MATRIX_BOT_USER }}
       MATRIX_BOT_PASSWORD: ${{ secrets.MATRIX_BOT_PASSWORD }}
+      MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
+      MATRIX_BOT_ROOM: ${{ secrets.MATRIX_BOT_ROOM }}
   
   # Manual approval gate for push events
   approval-gate:
@@ -121,6 +123,8 @@ jobs:
       LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
       MATRIX_BOT_USER: ${{ secrets.MATRIX_BOT_USER }}
       MATRIX_BOT_PASSWORD: ${{ secrets.MATRIX_BOT_PASSWORD }}
+      MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
+      MATRIX_BOT_ROOM: ${{ secrets.MATRIX_BOT_ROOM }}
   
   # Post-deployment health checks and notifications
   health-check:

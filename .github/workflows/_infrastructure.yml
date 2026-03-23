@@ -50,6 +50,10 @@ on:
         required: false
       MATRIX_BOT_PASSWORD:
         required: false
+      MATRIX_WEBHOOK_SECRET:
+        required: false
+      MATRIX_BOT_ROOM:
+        required: false
     outputs:
       server-ip:
         description: 'Server IP address'
@@ -149,6 +153,8 @@ jobs:
           LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
           MATRIX_BOT_USER: ${{ secrets.MATRIX_BOT_USER }}
           MATRIX_BOT_PASSWORD: ${{ secrets.MATRIX_BOT_PASSWORD }}
+          MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
+          MATRIX_BOT_ROOM: ${{ secrets.MATRIX_BOT_ROOM }}
         run: |
           EXTRA_VARS=""
           [ -n "$JITSI_ADMIN_USER" ] && [ -n "$JITSI_ADMIN_PASSWORD" ] && \
