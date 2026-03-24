@@ -2,7 +2,7 @@
 security-bot — Real-time security monitoring for the full services stack.
 
 Monitors:
-  • SSH        — successful & failed logins          (/var/log/auth.log)
+  • SSH        — successful logins only               (/var/log/auth.log)
   • WireGuard  — peer connect / disconnect           (Docker exec → wg show)
                — invalid handshake attempts          (/var/log/syslog)
   • Matrix     — login success & failure             (Synapse access logs)
@@ -340,26 +340,11 @@ class SSHMonitor(LogMonitor):
 
         m = _RE_SSH_FAIL.search(line)
         if m:
-            method, user, ip, port = m.groups()
-            ok, sup = should_alert("ssh_fail", ip)
-            if ok:
-                p, h = fmt("🔴", "SSH Login Failed", {
-                    "User": user, "Auth method": method,
-                    "Source IP": ip, "Port": port, "Location": geoip(ip),
-                }, sup, tag="SSH")
-                send(p, h)
-            return
+            return  # password auth disabled — failed attempts are noise
 
         m = _RE_SSH_INVALID.search(line)
         if m:
-            user, ip, port = m.groups()
-            ok, sup = should_alert("ssh_invalid", ip)
-            if ok:
-                p, h = fmt("🔴", "SSH Unknown User Attempt", {
-                    "User": user, "Source IP": ip,
-                    "Port": port, "Location": geoip(ip),
-                }, sup, tag="SSH")
-                send(p, h)
+            return  # password auth disabled — invalid user attempts are noise
 
 # ── Syslog / kernel monitor (WireGuard invalid handshakes) ────────────────────
 
@@ -549,20 +534,8 @@ class WireGuardMonitor(threading.Thread):
                     "Location": loc,
                 }, tag="VPN")
                 send(p, h)
-            else:
-                # Peer was already connected — check if it RECONNECTED
-                # (handshake timestamp jumped forward by >60s = new handshake)
-                prev_ts = self._last_handshake.get(pubkey, 0)
-                if info["ts"] - prev_ts > 60:
-                    loc = self._connected[pubkey].get("location", "") or geoip(info["ip"])
-                    label = self._peer_label(pubkey, peer_names)
-                    p, h = fmt("🔄", "VPN Reconnected", {
-                        "Peer": label,
-                        "Time": ts_str,
-                        "IP": info["ip"],
-                        "Location": loc,
-                    }, tag="VPN")
-                    send(p, h)
+            # (peers that remain within the 190s window are handled by
+            # the disconnect block below once the handshake expires)
 
         # Disconnections (state change: was connected → no longer connected)
         for pubkey, info in self._connected.items():
