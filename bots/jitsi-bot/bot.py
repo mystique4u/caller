@@ -24,6 +24,7 @@ BOT_PASSWORD        = os.environ.get("BOT_PASSWORD", "")
 MATRIX_DOMAIN       = os.environ.get("MATRIX_DOMAIN", "")
 JITSI_PUBLIC_URL    = os.environ.get("JITSI_PUBLIC_URL", "https://meet.example.com").rstrip("/")
 WEBHOOK_SECRET      = os.environ.get("WEBHOOK_SECRET", "")
+MATRIX_ROOM_ID      = os.environ.get("MATRIX_ROOM_ID", "")   # if set, use this room directly
 PORT                = int(os.environ.get("PORT", "3001"))
 
 _DATA_DIR   = pathlib.Path("/data")
@@ -100,7 +101,15 @@ def _login():
 def _ensure_room():
     global _resolved_room
 
-    # 1. Persisted room ID from previous run
+    # 1. Explicit room ID via env var (highest priority — set by deploy)
+    if MATRIX_ROOM_ID.startswith("!"):
+        _resolved_room = MATRIX_ROOM_ID
+        _ROOM_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _ROOM_FILE.write_text(_resolved_room)
+        print(f"[matrix] Using configured room {_resolved_room}")
+        return
+
+    # 2. Persisted room ID from previous run
     if _ROOM_FILE.exists():
         rid = _ROOM_FILE.read_text().strip()
         if rid.startswith("!"):
@@ -108,7 +117,7 @@ def _ensure_room():
             print(f"[matrix] Using persisted room {_resolved_room}")
             return
 
-    # 2. Try to create room (public so the admin can easily join)
+    # 3. Try to create room (public so the admin can easily join)
     alias = f"#jitsi-notifications:{MATRIX_DOMAIN}"
     status, body = _matrix_request("POST", "/_matrix/client/v3/createRoom", {
         "room_alias_name": "jitsi-notifications",
@@ -122,7 +131,7 @@ def _ensure_room():
         print(f"[matrix] Created room {_resolved_room}  alias: {alias}")
         return
 
-    # 3. Room already exists — resolve alias
+    # 4. Room already exists — resolve alias
     status, body = _matrix_request(
         "GET",
         f"/_matrix/client/v3/directory/room/{urllib.parse.quote(alias)}",

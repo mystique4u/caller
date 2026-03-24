@@ -115,10 +115,12 @@ jobs:
             echo "🔑 Loading existing credentials from server"
             BOT_PASSWORD=$(echo "$EXISTING" | grep '^BOT_PASSWORD=' | cut -d= -f2-)
             WEBHOOK_SECRET=$(echo "$EXISTING" | grep '^WEBHOOK_SECRET=' | cut -d= -f2-)
+            MATRIX_ROOM_ID=$(echo "$EXISTING" | grep '^MATRIX_ROOM_ID=' | cut -d= -f2-)
           else
             echo "🔑 Generating new credentials"
             BOT_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/\n' | head -c 32)
             WEBHOOK_SECRET=$(openssl rand -hex 32)
+            MATRIX_ROOM_ID=""
             ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} bash << SSHEOF
           printf 'BOT_PASSWORD=%s\nWEBHOOK_SECRET=%s\n' "${BOT_PASSWORD}" "${WEBHOOK_SECRET}" \
             > ${CREDS_FILE}
@@ -130,6 +132,7 @@ jobs:
           echo "::add-mask::${WEBHOOK_SECRET}"
           echo "bot_password=${BOT_PASSWORD}" >> $GITHUB_OUTPUT
           echo "webhook_secret=${WEBHOOK_SECRET}" >> $GITHUB_OUTPUT
+          echo "matrix_room_id=${MATRIX_ROOM_ID}" >> $GITHUB_OUTPUT
 
       - name: Sync bot files to server
         env:
@@ -165,10 +168,11 @@ jobs:
 
       - name: Write docker-compose override for jitsi-bot
         env:
-          SERVER_IP:      ${{ needs.get-server-ip.outputs.server_ip }}
-          DOMAIN_NAME:    ${{ secrets.DOMAIN_NAME }}
-          BOT_PASSWORD:   ${{ steps.creds.outputs.bot_password }}
-          WEBHOOK_SECRET: ${{ steps.creds.outputs.webhook_secret }}
+          SERVER_IP:       ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME:     ${{ secrets.DOMAIN_NAME }}
+          BOT_PASSWORD:    ${{ steps.creds.outputs.bot_password }}
+          WEBHOOK_SECRET:  ${{ steps.creds.outputs.webhook_secret }}
+          MATRIX_ROOM_ID:  ${{ steps.creds.outputs.matrix_room_id }}
         run: |
           cat > /tmp/docker-compose.jitsi-bot.yml << YAML
           services:
@@ -186,6 +190,7 @@ jobs:
                 - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
                 - JITSI_PUBLIC_URL=https://meet.${DOMAIN_NAME}
                 - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+                - MATRIX_ROOM_ID=${MATRIX_ROOM_ID}
               volumes:
                 - /opt/services/bots/jitsi-bot/data:/data
               networks:
