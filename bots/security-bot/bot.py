@@ -526,6 +526,12 @@ class WireGuardMonitor(threading.Thread):
             if ts > 0 and (now - ts) < 190:
                 ip = endpoint.rsplit(":", 1)[0].strip("[]")
                 current[pubkey] = {"endpoint": endpoint, "ip": ip, "ts": ts}
+            elif ts > 0:
+                log.info("WireGuard poll: peer …%s handshake %ds ago (stale, not active)",
+                         pubkey[-8:], now - ts)
+
+        log.info("WireGuard poll: %d active peer(s) now, %d in prev state",
+                 len(current), len(self._connected))
 
         if self._first_poll:
             # Silently record who is already connected — no alerts on startup
@@ -552,8 +558,22 @@ class WireGuardMonitor(threading.Thread):
                     "Location": loc,
                 }, tag="VPN")
                 send(p, h)
-            # (peers that remain within the 190s window are handled by
-            # the disconnect block below once the handshake expires)
+            else:
+                # Peer was already connected — detect reconnect by endpoint change.
+                # Every VPN reconnect starts a new UDP session with a different
+                # source port, so endpoint string changes even if the IP is the same.
+                prev_endpoint = self._connected[pubkey].get("endpoint", "")
+                if info["endpoint"] != prev_endpoint:
+                    loc = geoip(info["ip"])
+                    info["location"] = loc
+                    label = self._peer_label(pubkey, peer_names)
+                    p, h = fmt("🔄", "VPN Reconnected", {
+                        "Peer": label,
+                        "Time": ts_str,
+                        "IP": info["ip"],
+                        "Location": loc,
+                    }, tag="VPN")
+                    send(p, h)
 
         # Disconnections (state change: was connected → no longer connected)
         for pubkey, info in self._connected.items():
