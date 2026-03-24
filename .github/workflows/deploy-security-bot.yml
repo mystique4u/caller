@@ -199,6 +199,7 @@ jobs:
                 - /var/log/syslog:/var/log/syslog:ro
                 - /opt/services/matrix/synapse:/synapse-logs:ro
                 - /var/run/docker.sock:/var/run/docker.sock:ro
+                - /opt/services/wireguard-ui/clients:/wgui-clients:ro
                 - /opt/services/bots/security-bot/data:/data
               networks:
                 - services_network

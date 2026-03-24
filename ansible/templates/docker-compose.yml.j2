@@ -290,6 +290,8 @@ services:
       - /opt/services/matrix/synapse:/synapse-logs:ro
       # Docker socket for WireGuard peer polling and container event monitoring
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # WireGuard UI peer metadata (names)
+      - /opt/services/wireguard-ui/clients:/wgui-clients:ro
       # Persistent data directory (GeoLite2-City.mmdb lives here)
       - /opt/services/bots/security-bot/data:/data
     networks:

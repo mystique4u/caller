@@ -88,3 +88,12 @@
       tags: ['backup']
       when: lookup('env', 'STORAGEBOX_HOST') != ''
 
+  handlers:
+    - name: Restart ssh
+      systemd:
+        name: ssh
+        state: restarted
+    - name: Restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted

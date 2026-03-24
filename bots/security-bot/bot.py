@@ -66,6 +66,7 @@ MATRIX_DOMAIN       = os.environ.get("MATRIX_DOMAIN", "")
 MATRIX_ROOM         = os.environ.get("MATRIX_ROOM", "")
 ADMIN_USER          = os.environ.get("ADMIN_USER", "")
 WEBHOOK_SECRET      = os.environ.get("WEBHOOK_SECRET", "")
+WGUI_CLIENTS_PATH   = os.environ.get("WGUI_CLIENTS_PATH", "/wgui-clients")
 GEOIP_DB_PATH       = os.environ.get("GEOIP_DB_PATH", "/data/GeoLite2-City.mmdb")
 DOCKER_SOCKET       = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
 PORT                = int(os.environ.get("PORT", 3002))
@@ -272,13 +273,14 @@ def send(plain: str, html: str = "") -> None:
 
 # ── Event formatter ────────────────────────────────────────────────────────────
 
-def fmt(icon: str, title: str, fields: dict, suppressed: int = 0) -> tuple[str, str]:
+def fmt(icon: str, title: str, fields: dict, suppressed: int = 0, tag: str = "") -> tuple[str, str]:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    tag_prefix = f"[{tag}] " if tag else ""
     note = f" <i>(+{suppressed} more in window)</i>" if suppressed else ""
     rows = "".join(f"<tr><td><b>{k}</b></td><td>{v}</td></tr>" for k, v in fields.items())
-    html = f"<p>{icon} <b>{title}</b> — <i>{ts}{note}</i></p><table>{rows}</table>"
+    html = f"<p>{icon} <b>{tag_prefix}{title}</b> — <i>{ts}{note}</i></p><table>{rows}</table>"
     suffix = f"\n  (+{suppressed} more in rate-limit window)" if suppressed else ""
-    plain = f"{icon} {title} ({ts})\n" + "\n".join(f"  {k}: {v}" for k, v in fields.items()) + suffix
+    plain = f"{icon} {tag_prefix}{title} ({ts})\n" + "\n".join(f"  {k}: {v}" for k, v in fields.items()) + suffix
     return plain, html
 
 # ── Log file monitor base ──────────────────────────────────────────────────────
@@ -331,7 +333,7 @@ class SSHMonitor(LogMonitor):
                     p, h = fmt("🟢", "SSH Login", {
                         "User": user, "Auth method": method,
                         "Source IP": ip, "Port": port, "Location": geoip(ip),
-                    }, sup)
+                    }, sup, tag="SSH")
                     send(p, h)
             return
 
@@ -343,7 +345,7 @@ class SSHMonitor(LogMonitor):
                 p, h = fmt("🔴", "SSH Login Failed", {
                     "User": user, "Auth method": method,
                     "Source IP": ip, "Port": port, "Location": geoip(ip),
-                }, sup)
+                }, sup, tag="SSH")
                 send(p, h)
             return
 
@@ -355,7 +357,7 @@ class SSHMonitor(LogMonitor):
                 p, h = fmt("🔴", "SSH Unknown User Attempt", {
                     "User": user, "Source IP": ip,
                     "Port": port, "Location": geoip(ip),
-                }, sup)
+                }, sup, tag="SSH")
                 send(p, h)
 
 # ── Syslog / kernel monitor (WireGuard invalid handshakes) ────────────────────
@@ -376,14 +378,14 @@ class SyslogMonitor(LogMonitor):
             if ok:
                 p, h = fmt("🔴", "VPN: Unknown Peer Handshake Attempt", {
                     "Source IP": ip, "Port": port, "Location": geoip(ip),
-                }, sup)
+                }, sup, tag="VPN")
                 send(p, h)
             return
 
         if _RE_WG_OVERLOAD.search(line):
             p, h = fmt("⚠️", "WireGuard Interface Overload", {
                 "Detail": line.strip()[-120:],
-            })
+            }, tag="VPN")
             send(p, h)
 
 # ── Synapse access log monitor ─────────────────────────────────────────────────
@@ -411,23 +413,45 @@ class SynapseMonitor(LogMonitor):
                 if ok:
                     p, h = fmt("🟢", "Matrix Login", {
                         "Source IP": ip, "Location": geoip(ip),
-                    }, sup)
+                    }, sup, tag="MATRIX")
                     send(p, h)
         elif status in ("400", "401", "403"):
             ok, sup = should_alert("matrix_fail", ip)
             if ok:
                 p, h = fmt("🔴", "Matrix Login Failed", {
                     "Source IP": ip, "HTTP status": status, "Location": geoip(ip),
-                }, sup)
+                }, sup, tag="MATRIX")
                 send(p, h)
 
 # ── WireGuard peer state monitor ──────────────────────────────────────────────
 
+_WGUI_CLIENTS_DIR = Path("/wgui-clients")
+
+def _load_peer_names() -> dict[str, str]:
+    """Returns {pubkey: name} from the wireguard-ui client JSON files."""
+    names: dict[str, str] = {}
+    d = Path(WGUI_CLIENTS_PATH)
+    if not d.is_dir():
+        return names
+    for f in d.glob("*.json"):
+        try:
+            data = json.loads(f.read_text())
+            pub  = data.get("public_key", "")
+            name = data.get("name", "")
+            if pub and name:
+                names[pub] = name
+        except Exception:
+            pass
+    return names
+
+
 class WireGuardMonitor(threading.Thread):
     """
     Polls `wg show all dump` inside the wireguard-ui container every POLL_INTERVAL
-    seconds and sends an alert when peers connect or disconnect.
+    seconds and sends an alert ONLY when a peer's connection state CHANGES
+    (new connection or disconnection — not on every poll).
 
+    Peer names are resolved from the wireguard-ui client JSON files.
     A peer is considered connected when its latest handshake is < 190 seconds old
     (WireGuard re-handshakes every ~120s when the tunnel is active).
     """
@@ -436,8 +460,9 @@ class WireGuardMonitor(threading.Thread):
 
     def __init__(self):
         super().__init__()
-        # pubkey → {"endpoint": "1.2.3.4:51820", "ip": "1.2.3.4", "location": "…", "ts": unix}
+        # pubkey → {"endpoint": str, "ip": str, "location": str, "ts": int}
         self._connected: dict[str, dict] = {}
+        self._first_poll = True  # Don't alert for peers already connected on startup
 
     def run(self) -> None:
         if not Path(DOCKER_SOCKET).exists():
@@ -457,6 +482,11 @@ class WireGuardMonitor(threading.Thread):
                 log.debug("WireGuard poll error: %s", exc)
             time.sleep(POLL_INTERVAL)
 
+    def _peer_label(self, pubkey: str, peer_names: dict[str, str]) -> str:
+        name = peer_names.get(pubkey, "")
+        short = f"…{pubkey[-8:]}"
+        return f"{name} ({short})" if name else short
+
     def _poll(self, client) -> None:
         container = None
         for name in ("wireguard-ui", "wireguard"):
@@ -472,6 +502,7 @@ class WireGuardMonitor(threading.Thread):
         if result.exit_code != 0:
             return
 
+        peer_names = _load_peer_names()
         now = int(time.time())
         current: dict[str, dict] = {}
 
@@ -487,33 +518,46 @@ class WireGuardMonitor(threading.Thread):
             except ValueError:
                 continue
             if ts > 0 and (now - ts) < 190:
-                # Strip IPv6 brackets from endpoint; take only the IP part
                 ip = endpoint.rsplit(":", 1)[0].strip("[]")
                 current[pubkey] = {"endpoint": endpoint, "ip": ip, "ts": ts}
 
-        # New connections
+        if self._first_poll:
+            # Silently record who is already connected — no alerts on startup
+            for pubkey, info in current.items():
+                info["location"] = geoip(info["ip"])
+            self._connected = current
+            self._first_poll = False
+            log.info("WireGuard monitor: %d peer(s) already connected at startup", len(current))
+            return
+
+        ts_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        # New connections (state change: was not connected → now connected)
         for pubkey, info in current.items():
             if pubkey not in self._connected:
                 loc = geoip(info["ip"])
                 info["location"] = loc
+                label = self._peer_label(pubkey, peer_names)
                 p, h = fmt("🟢", "VPN Connected", {
-                    "Peer": f"…{pubkey[-8:]}",
-                    "Endpoint": info["endpoint"],
+                    "Peer": label,
+                    "Time": ts_str,
+                    "IP": info["ip"],
                     "Location": loc,
-                })
+                }, tag="VPN")
                 send(p, h)
 
-        # Disconnections
+        # Disconnections (state change: was connected → no longer connected)
         for pubkey, info in self._connected.items():
             if pubkey not in current:
+                label = self._peer_label(pubkey, peer_names)
                 p, h = fmt("🔵", "VPN Disconnected", {
-                    "Peer": f"…{pubkey[-8:]}",
-                    "Endpoint": info["endpoint"],
+                    "Peer": label,
+                    "IP": info["ip"],
                     "Location": info.get("location", ""),
                     "Last handshake": datetime.fromtimestamp(
                         info["ts"], tz=timezone.utc
-                    ).strftime("%H:%M UTC"),
-                })
+                    ).strftime("%Y-%m-%d %H:%M UTC"),
+                }, tag="VPN")
                 send(p, h)
 
         self._connected = current
@@ -560,11 +604,11 @@ class DockerMonitor(threading.Thread):
             oom = attrs.get("oomKilled", "false") == "true"
             icon  = "🚨" if oom else "⚠️"
             title = "Container OOM Killed" if oom else "Container Crashed"
-            p, h = fmt(icon, title, {"Container": name, "Exit code": exit_code})
+            p, h = fmt(icon, title, {"Container": name, "Exit code": exit_code}, tag="DOCKER")
             send(p, h)
 
         elif status == "health_status: unhealthy":
-            p, h = fmt("⚠️", "Container Unhealthy", {"Container": name})
+            p, h = fmt("⚠️", "Container Unhealthy", {"Container": name}, tag="DOCKER")
             send(p, h)
 
 # ── Webhook server (receives events pushed from Routemaker) ───────────────────
@@ -626,7 +670,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             if ok:
                 p, h = fmt("🟢", "Routemaker Login", {
                     "User": username, "Source IP": ip, "Location": geoip(ip),
-                }, sup)
+                }, sup, tag="ROUTEMAKER")
                 send(p, h)
 
         elif event == "login_failed":
@@ -634,7 +678,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             if ok:
                 p, h = fmt("🔴", "Routemaker Login Failed", {
                     "User": username, "Source IP": ip, "Location": geoip(ip),
-                }, sup)
+                }, sup, tag="ROUTEMAKER")
                 send(p, h)
 
 # ── Entry point ────────────────────────────────────────────────────────────────
