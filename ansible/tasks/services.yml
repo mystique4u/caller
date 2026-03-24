@@ -70,7 +70,7 @@
   delay: 10
   failed_when: false
   changed_when: "'User ID already taken' not in matrix_bot_result.stdout and matrix_bot_result.rc == 0"
-  when: matrix_bot_user is defined and matrix_bot_password is defined
+  when: matrix_bot_user is defined and matrix_bot_password is defined and matrix_bot_password | length > 0
 
 - name: Copy health check script to server
   copy:
