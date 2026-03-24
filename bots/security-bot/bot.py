@@ -160,6 +160,7 @@ def should_alert(event_type: str, ip: str) -> tuple[bool, int]:
 # ── Matrix client ──────────────────────────────────────────────────────────────
 
 _ROOM_ID_FILE = Path("/data/room_id.txt")
+_TOKEN_FILE   = Path("/data/token.txt")
 
 def _resolve_room(token: str) -> str:
     """Resolve MATRIX_ROOM env var to a room ID, or create a new room.
@@ -221,6 +222,22 @@ def _init_matrix() -> None:
     if not BOT_PASSWORD:
         log.warning("BOT_PASSWORD not set — Matrix messages will not be sent")
         return
+
+    # Reuse a persisted token to avoid hitting the login rate limit on restarts
+    if _TOKEN_FILE.exists():
+        try:
+            saved = _TOKEN_FILE.read_text().strip()
+            if saved:
+                _matrix_req("GET", "/_matrix/client/v3/account/whoami", token=saved)
+                _access_token = saved
+                log.info("Matrix: reusing persisted access token")
+                _room_id = _resolve_room(_access_token)
+                log.info("Matrix: posting alerts to %s", _room_id)
+                return
+        except Exception:
+            log.info("Matrix: persisted token invalid — re-authenticating")
+            _TOKEN_FILE.unlink(missing_ok=True)
+
     for attempt in range(3):
         try:
             resp = _matrix_req("POST", "/_matrix/client/v3/login", {
@@ -229,6 +246,7 @@ def _init_matrix() -> None:
                 "password": BOT_PASSWORD,
             })
             _access_token = resp["access_token"]
+            _TOKEN_FILE.write_text(_access_token)
             log.info("Matrix: authenticated as @%s:%s", BOT_USERNAME, MATRIX_DOMAIN)
             _room_id = _resolve_room(_access_token)
             log.info("Matrix: posting alerts to %s", _room_id)
