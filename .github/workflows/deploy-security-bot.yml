@@ -28,9 +28,10 @@ env:
 #   DOMAIN_NAME       — your domain (e.g. example.com)
 #   EMAIL_ADDRESS     — destination for post-deploy email
 #
-# Bot password, webhook secret, and Matrix room are auto-generated on first
-# deploy and stored in /opt/services/bots/security-bot/.credentials on the
-# server. They are reused on all subsequent deploys.
+# Bot password and webhook secret are auto-generated on first deploy and
+# stored in /opt/services/bots/security-bot/.credentials on the server.
+# The bot creates its own Matrix room on startup and persists the room ID
+# to /opt/services/bots/security-bot/data/room_id.txt.
 
 jobs:
   get-server-ip:
@@ -163,53 +164,12 @@ jobs:
                --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1 \
              | grep -v 'User ID already taken' || true"
 
-      - name: Create or load Matrix monitoring room (idempotent)
-        id: room
-        env:
-          SERVER_IP:    ${{ needs.get-server-ip.outputs.server_ip }}
-          DOMAIN_NAME:  ${{ secrets.DOMAIN_NAME }}
-          BOT_PASSWORD: ${{ steps.creds.outputs.bot_password }}
-        run: |
-          ROOM_ID=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} bash << SSHEOF
-          CREDS=/opt/services/bots/security-bot/.credentials
-          EXISTING_ROOM=\$(grep '^ROOM_ID=' "\$CREDS" 2>/dev/null | cut -d= -f2- || true)
-          if [[ -n "\$EXISTING_ROOM" ]]; then
-            echo "\$EXISTING_ROOM"
-          else
-            # Wait for Synapse to be ready
-            for i in \$(seq 1 10); do
-              TOKEN=\$(curl -sf -X POST http://localhost:8008/_matrix/client/v3/login \
-                -H "Content-Type: application/json" \
-                -d '{"type":"m.login.password","user":"${BOT_USERNAME}","password":"${BOT_PASSWORD}"}' \
-                2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" 2>/dev/null || true)
-              [[ -n "\$TOKEN" ]] && break
-              sleep 5
-            done
-            if [[ -z "\$TOKEN" ]]; then
-              echo "MATRIX_LOGIN_FAILED"
-              exit 0
-            fi
-            RID=\$(curl -sf -X POST http://localhost:8008/_matrix/client/v3/createRoom \
-              -H "Authorization: Bearer \$TOKEN" \
-              -H "Content-Type: application/json" \
-              -d '{"name":"Security Alerts","topic":"Real-time server security monitoring","preset":"private_chat"}' \
-              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('room_id',''))")
-            echo "ROOM_ID=\$RID" >> "\$CREDS"
-            echo "\$RID"
-          fi
-          SSHEOF
-          )
-          echo "::add-mask::${ROOM_ID}" 2>/dev/null || true
-          echo "room_id=${ROOM_ID}" >> $GITHUB_OUTPUT
-          echo "✅ Monitoring room: ${ROOM_ID}"
-
       - name: Write docker-compose override for security-bot
         env:
           SERVER_IP:       ${{ needs.get-server-ip.outputs.server_ip }}
           DOMAIN_NAME:     ${{ secrets.DOMAIN_NAME }}
           BOT_PASSWORD:    ${{ steps.creds.outputs.bot_password }}
           WEBHOOK_SECRET:  ${{ steps.creds.outputs.webhook_secret }}
-          ROOM_ID:         ${{ steps.room.outputs.room_id }}
         run: |
           cat > /tmp/docker-compose.security-bot.yml << YAML
           services:
@@ -226,7 +186,6 @@ jobs:
                 - MATRIX_DOMAIN=${DOMAIN_NAME}
                 - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
                 - WEBHOOK_SECRET=${WEBHOOK_SECRET}
-                - MATRIX_ROOM=${ROOM_ID}
                 - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
                 - ALERT_ON_SUCCESS=true
                 - RATE_LIMIT_WINDOW=300
@@ -320,9 +279,11 @@ jobs:
           SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
-            RESPONSE=$(curl -sf http://localhost:3002/health 2>&1) || true
+            RESPONSE=$(docker exec security-bot python3 -c \
+              "import urllib.request; print(urllib.request.urlopen('http://localhost:3002/health').read().decode())" \
+              2>&1) || true
             echo "Health response: $RESPONSE"
-            if echo "$RESPONSE" | grep -q '"ok":true'; then
+            if echo "$RESPONSE" | grep -q '"ok": true\|"ok":true'; then
               echo "✅ Bot health check passed"
             else
               echo "⚠️  Health check inconclusive — check logs:"
@@ -335,7 +296,6 @@ jobs:
           SERVER_IP:     ${{ needs.get-server-ip.outputs.server_ip }}
           DOMAIN_NAME:   ${{ secrets.DOMAIN_NAME }}
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
-          ROOM_ID:       ${{ steps.room.outputs.room_id }}
         run: |
           if [[ -z "$EMAIL_ADDRESS" ]]; then
             echo "EMAIL_ADDRESS not set — skipping notification"
@@ -348,8 +308,12 @@ jobs:
           Your security-bot is now running and monitoring:
 
             Bot Matrix ID  : @${BOT_USERNAME}:${DOMAIN_NAME}
-            Monitoring room: ${ROOM_ID}
-            Room alias     : #security-alerts:${DOMAIN_NAME} (if alias was set)
+
+          The bot creates its own monitoring room on first start and
+          persists the room ID to /opt/services/bots/security-bot/data/room_id.txt.
+
+          To find out which room it joined, run:
+            ssh root@<server> 'docker logs security-bot | grep -i "room\|alert"'
 
           ── WHAT'S BEING MONITORED ────────────────────────────────────
             • SSH logins and failed attempts (with GeoIP)
@@ -360,16 +324,16 @@ jobs:
             • Docker container crashes and OOM kills
 
           ── NEXT STEPS ────────────────────────────────────────────────
-            1. In Element / your Matrix client, search for the room ID
-               above and join it — that is where alerts will appear.
+            1. In Element / your Matrix client, accept the invite from
+               @${BOT_USERNAME}:${DOMAIN_NAME} or search for the room ID
+               shown in: docker logs security-bot | grep "room_id"
 
-            2. If you want to receive alerts in a different room, update
-               the monitoring room by re-running this workflow after
-               editing /opt/services/bots/security-bot/.credentials:
-                 ROOM_ID=!yourRoomId:${DOMAIN_NAME}
+            2. To use a specific existing room instead, set:
+               MATRIX_ROOM=!yourRoomId:${DOMAIN_NAME}
+               inside /opt/services/bots/security-bot/.credentials
+               then restart: docker restart security-bot
 
-            3. (Optional) To enable higher-accuracy GeoIP, place a
-               GeoLite2-City.mmdb file in:
+            3. (Optional) Higher-accuracy GeoIP — place GeoLite2-City.mmdb in:
                /opt/services/bots/security-bot/data/
                (free download from https://dev.maxmind.com)
 

@@ -155,18 +155,54 @@ def should_alert(event_type: str, ip: str) -> tuple[bool, int]:
 
 # ── Matrix client ──────────────────────────────────────────────────────────────
 
-_access_token: str = ""
-_room_id: str = ""
+_ROOM_ID_FILE = Path("/data/room_id.txt")
 
-def _matrix_req(method: str, path: str, body=None, token: str = "") -> dict:
-    url = f"{MATRIX_INTERNAL_URL}{path}"
-    data = json.dumps(body).encode() if body is not None else None
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read())
+def _resolve_room(token: str) -> str:
+    """Resolve MATRIX_ROOM env var to a room ID, or create a new room.
+
+    Priority:
+      1. Env var MATRIX_ROOM if it looks like a real room ID (starts with !)
+      2. Persisted /data/room_id.txt
+      3. Create a new room via the Matrix API and persist its ID
+    """
+    # 1. Env var is already a room ID
+    env_room = MATRIX_ROOM.strip()
+    if env_room.startswith("!"):
+        log.info("Matrix: using room from env → %s", env_room)
+        return env_room
+
+    # 2. Persisted room ID from a previous run
+    if _ROOM_ID_FILE.exists():
+        rid = _ROOM_ID_FILE.read_text().strip()
+        if rid.startswith("!"):
+            log.info("Matrix: using persisted room → %s", rid)
+            return rid
+
+    # 3. Env var is a room alias — try directory lookup
+    if env_room and env_room not in ("MATRIX_LOGIN_FAILED", ""):
+        alias = env_room if env_room.startswith("#") else f"#{env_room}:{MATRIX_DOMAIN}"
+        try:
+            rid = _matrix_req("GET",
+                f"/_matrix/client/v3/directory/room/{urllib.parse.quote(alias)}",
+                token=token)["room_id"]
+            _ROOM_ID_FILE.write_text(rid)
+            log.info("Matrix: resolved alias %s → %s", alias, rid)
+            return rid
+        except Exception as exc:
+            log.warning("Matrix: alias lookup failed (%s) — will create new room", exc)
+
+    # 4. Create a new room
+    log.info("Matrix: creating new security-alerts room …")
+    resp = _matrix_req("POST", "/_matrix/client/v3/createRoom", {
+        "name":   "Security Alerts",
+        "topic":  "Real-time server security monitoring",
+        "preset": "private_chat",
+    }, token=token)
+    rid = resp["room_id"]
+    _ROOM_ID_FILE.write_text(rid)
+    log.info("Matrix: created room %s — join it in Element to receive alerts", rid)
+    return rid
+
 
 def _init_matrix() -> None:
     global _access_token, _room_id
@@ -182,17 +218,25 @@ def _init_matrix() -> None:
             })
             _access_token = resp["access_token"]
             log.info("Matrix: authenticated as @%s:%s", BOT_USERNAME, MATRIX_DOMAIN)
-            if MATRIX_ROOM:
-                room = MATRIX_ROOM
-                if not room.startswith("!"):
-                    alias = room if room.startswith("#") else f"#{room}:{MATRIX_DOMAIN}"
-                    room = _matrix_req("GET", f"/_matrix/client/v3/directory/room/{urllib.parse.quote(alias)}")["room_id"]
-                _room_id = room
-                log.info("Matrix: room → %s", _room_id)
+            _room_id = _resolve_room(_access_token)
+            log.info("Matrix: posting alerts to %s", _room_id)
             return
         except Exception as exc:
             log.error("Matrix init attempt %d/3 failed: %s", attempt + 1, exc)
             time.sleep(5 * (attempt + 1))
+    log.warning("Matrix init failed after 3 attempts — bot will run without Matrix notifications")
+
+
+def _matrix_req(method: str, path: str, body=None, token: str = "") -> dict:
+    url = f"{MATRIX_INTERNAL_URL}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())
+
 
 def send(plain: str, html: str = "") -> None:
     if not _access_token or not _room_id:

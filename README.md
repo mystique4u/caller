@@ -108,6 +108,12 @@ Go to: `Settings` → `Secrets and variables` → `Actions` → `New repository 
   - SPF, DKIM, DMARC email authentication
   - TLS/SSL encryption with Let's Encrypt
   - Fail2ban security protection
+- **jitsi-bot** - Matrix bot: forwards Jitsi meeting events to a Matrix room
+- **security-bot** - Matrix bot: monitors SSH, VPN, Docker, and app login events
+  - GeoIP enrichment via ip-api.com (no API key needed)
+  - Self-creates a Matrix room on first start; room ID persisted to disk
+  - Receives signed webhooks from Routemaker
+  - HTTP health endpoint on port 3002
 
 ### Network Configuration
 
@@ -178,6 +184,42 @@ Quick start:
 4. Add users (admin must create accounts)
 5. Use clients on all platforms (iOS, Android, Windows, macOS, Linux)
 
+### 🤖 Bots
+
+Two Matrix bots run as separate Docker containers (each with its own deploy pipeline):
+
+#### jitsi-bot
+Forwards Jitsi meeting join/leave events to a configured Matrix room via a Prosody plugin webhook.
+
+Quick start: deploy fires automatically when `bots/jitsi-bot/**` changes.
+
+#### security-bot
+Real-time security monitoring bot. Monitors:
+- **SSH** — login successes and failures (with GeoIP from ip-api.com)
+- **WireGuard VPN** — peer connect / disconnect / invalid handshake attempts
+- **Matrix Synapse** — login successes and failures
+- **Routemaker** — login events (signed webhooks)
+- **Docker** — container OOM kills and unexpected exits
+
+On first start the bot:
+1. Registers itself as `@security-bot:yourdomain.com` (idempotent)
+2. Creates a private Matrix room named "Security Alerts"
+3. Saves the room ID to `/opt/services/bots/security-bot/data/room_id.txt`
+
+To find which room alerts go to:
+```bash
+ssh root@<server> 'docker logs security-bot | grep -i room'
+```
+
+To use your own existing room instead:
+```bash
+# On the server:
+echo "MATRIX_ROOM=!yourRoomId:yourdomain.com" >> /opt/services/bots/security-bot/.credentials
+docker restart security-bot
+```
+
+No new GitHub Secrets are required — credentials are auto-generated server-side on first deploy.
+
 ## 🗂️ Server Directory Structure
 
 ```
@@ -194,6 +236,10 @@ Quick start:
 │   └── data/              # Runtime data
 ├── postgres/              # PostgreSQL data
 ├── element/               # Element Web config
+├── bots/
+│   ├── jitsi-bot/         # Jitsi → Matrix event bot
+│   └── security-bot/      # Security monitoring bot
+│       └── data/          # Room ID + optional GeoIP DB
 └── traefik/
     ├── traefik.toml       # Static config
     ├── acme.json          # SSL certificates
@@ -237,6 +283,24 @@ docker compose restart matrix-synapse
 
 ```bash
 docker ps
+```
+
+### Bot Management
+
+```bash
+# View security-bot alerts in real time
+docker logs -f security-bot
+
+# Check security-bot health
+docker exec security-bot python3 -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:3002/health').read().decode())"
+
+# Find which Matrix room security alerts go to
+docker logs security-bot | grep -i room
+
+# Restart a bot after config change
+docker restart security-bot
+docker restart jitsi-bot
 ```
 
 ### Check WireGuard Status
