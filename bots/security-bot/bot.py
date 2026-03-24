@@ -268,6 +268,7 @@ def send(plain: str, html: str = "") -> None:
             body,
             token=_access_token,
         )
+        log.info("Matrix: sent → %s", plain[:70].replace("\n", " "))
     except Exception as exc:
         log.error("Failed to send Matrix message: %s", exc)
 
@@ -463,6 +464,8 @@ class WireGuardMonitor(threading.Thread):
         # pubkey → {"endpoint": str, "ip": str, "location": str, "ts": int}
         self._connected: dict[str, dict] = {}
         self._first_poll = True  # Don't alert for peers already connected on startup
+        # pubkey → last seen handshake timestamp — to detect reconnects
+        self._last_handshake: dict[str, int] = {}
 
     def run(self) -> None:
         if not Path(DOCKER_SOCKET).exists():
@@ -526,6 +529,7 @@ class WireGuardMonitor(threading.Thread):
             for pubkey, info in current.items():
                 info["location"] = geoip(info["ip"])
             self._connected = current
+            self._last_handshake = {pk: info["ts"] for pk, info in current.items()}
             self._first_poll = False
             log.info("WireGuard monitor: %d peer(s) already connected at startup", len(current))
             return
@@ -545,6 +549,20 @@ class WireGuardMonitor(threading.Thread):
                     "Location": loc,
                 }, tag="VPN")
                 send(p, h)
+            else:
+                # Peer was already connected — check if it RECONNECTED
+                # (handshake timestamp jumped forward by >60s = new handshake)
+                prev_ts = self._last_handshake.get(pubkey, 0)
+                if info["ts"] - prev_ts > 60:
+                    loc = self._connected[pubkey].get("location", "") or geoip(info["ip"])
+                    label = self._peer_label(pubkey, peer_names)
+                    p, h = fmt("🔄", "VPN Reconnected", {
+                        "Peer": label,
+                        "Time": ts_str,
+                        "IP": info["ip"],
+                        "Location": loc,
+                    }, tag="VPN")
+                    send(p, h)
 
         # Disconnections (state change: was connected → no longer connected)
         for pubkey, info in self._connected.items():
@@ -561,8 +579,7 @@ class WireGuardMonitor(threading.Thread):
                 send(p, h)
 
         self._connected = current
-
-# ── Docker container monitor ──────────────────────────────────────────────────
+        self._last_handshake = {pk: info["ts"] for pk, info in current.items()}
 
 _IGNORE_CONTAINERS = {"security-bot"}  # Don't alert on our own container
 
