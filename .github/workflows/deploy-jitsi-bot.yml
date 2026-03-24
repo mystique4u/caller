@@ -173,7 +173,7 @@ jobs:
             if [[ "${NEW_CREDS}" == "true" ]]; then
               echo "🔄 User exists but credentials were regenerated — updating DB password"
               ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
-                "ADMIN_TOKEN=\$(docker exec matrix-postgres psql -U synapse synapse -tAc \"SELECT token FROM access_tokens WHERE user_id IN (SELECT name FROM users WHERE admin=1) ORDER BY id DESC LIMIT 1;\") && docker exec matrix-synapse wget -q -O/dev/null --method=PUT --header=Content-Type:application/json --header=\"Authorization: Bearer \$ADMIN_TOKEN\" --body-data=\"{\\\"password\\\":\\\"${BOT_PASSWORD}\\\"}\" http://localhost:8008/_synapse/admin/v2/users/%40${BOT_USERNAME}%3A${MATRIX_DOMAIN} && echo OK"
+                "ADMIN_TOKEN=\$(docker exec matrix-postgres psql -U synapse synapse -tAc \"SELECT token FROM access_tokens WHERE user_id IN (SELECT name FROM users WHERE admin=1) ORDER BY id DESC LIMIT 1;\") && curl -s -o /dev/null -w '%{http_code}' -X PUT -H 'Content-Type: application/json' -H \"Authorization: Bearer \$ADMIN_TOKEN\" -d \"{\\\"password\\\":\\\"${BOT_PASSWORD}\\\"}\" http://localhost:8008/_synapse/admin/v2/users/%40${BOT_USERNAME}%3A${MATRIX_DOMAIN} && echo OK"
             fi
           fi
 
