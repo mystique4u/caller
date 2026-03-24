@@ -31,6 +31,8 @@ Optional environment variables:
   SYNAPSE_LOG_PATH      default: /synapse-logs/homeserver.log
   ALERT_ON_SUCCESS      send alerts for successful logins too; default: true
   RATE_LIMIT_WINDOW     seconds to suppress repeated alerts per IP; default: 300
+  ADMIN_USER            Matrix user ID to auto-invite when room is first created;
+                        e.g. @yourusername:example.com
 """
 
 import os
@@ -62,6 +64,7 @@ BOT_USERNAME        = os.environ.get("BOT_USERNAME", "security-bot")
 BOT_PASSWORD        = os.environ.get("BOT_PASSWORD", "")
 MATRIX_DOMAIN       = os.environ.get("MATRIX_DOMAIN", "")
 MATRIX_ROOM         = os.environ.get("MATRIX_ROOM", "")
+ADMIN_USER          = os.environ.get("ADMIN_USER", "")
 WEBHOOK_SECRET      = os.environ.get("WEBHOOK_SECRET", "")
 GEOIP_DB_PATH       = os.environ.get("GEOIP_DB_PATH", "/data/GeoLite2-City.mmdb")
 DOCKER_SOCKET       = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
@@ -201,6 +204,14 @@ def _resolve_room(token: str) -> str:
     rid = resp["room_id"]
     _ROOM_ID_FILE.write_text(rid)
     log.info("Matrix: created room %s — join it in Element to receive alerts", rid)
+    # Auto-invite the configured admin user
+    if ADMIN_USER:
+        try:
+            _matrix_req("POST", f"/_matrix/client/v3/rooms/{urllib.parse.quote(rid)}/invite",
+                        {"user_id": ADMIN_USER}, token=token)
+            log.info("Matrix: invited %s to security-alerts room", ADMIN_USER)
+        except Exception as exc:
+            log.warning("Matrix: could not invite %s: %s", ADMIN_USER, exc)
     return rid
 
 

@@ -23,10 +23,12 @@ env:
   BOT_USERNAME: security-bot
 
 # Required GitHub Secrets (all pre-existing, no new secrets needed):
-#   SSH_PRIVATE_KEY   — server SSH key
-#   TF_API_TOKEN      — Terraform Cloud token
-#   DOMAIN_NAME       — your domain (e.g. example.com)
-#   EMAIL_ADDRESS     — destination for post-deploy email
+#   SSH_PRIVATE_KEY    — server SSH key
+#   TF_API_TOKEN       — Terraform Cloud token
+#   DOMAIN_NAME        — your domain (e.g. example.com)
+#   EMAIL_ADDRESS      — destination for post-deploy email
+#   MATRIX_ADMIN_USER  — Matrix username to auto-invite to the alerts room
+#                        (e.g. myadmin — without the @ or :domain suffix)
 #
 # Bot password and webhook secret are auto-generated on first deploy and
 # stored in /opt/services/bots/security-bot/.credentials on the server.
@@ -166,10 +168,11 @@ jobs:
 
       - name: Write docker-compose override for security-bot
         env:
-          SERVER_IP:       ${{ needs.get-server-ip.outputs.server_ip }}
-          DOMAIN_NAME:     ${{ secrets.DOMAIN_NAME }}
-          BOT_PASSWORD:    ${{ steps.creds.outputs.bot_password }}
-          WEBHOOK_SECRET:  ${{ steps.creds.outputs.webhook_secret }}
+          SERVER_IP:          ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME:        ${{ secrets.DOMAIN_NAME }}
+          BOT_PASSWORD:       ${{ steps.creds.outputs.bot_password }}
+          WEBHOOK_SECRET:     ${{ steps.creds.outputs.webhook_secret }}
+          MATRIX_ADMIN_USER:  ${{ secrets.MATRIX_ADMIN_USER }}
         run: |
           cat > /tmp/docker-compose.security-bot.yml << YAML
           services:
@@ -186,6 +189,7 @@ jobs:
                 - MATRIX_DOMAIN=${DOMAIN_NAME}
                 - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
                 - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+                - ADMIN_USER=@${MATRIX_ADMIN_USER}:${DOMAIN_NAME}
                 - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
                 - ALERT_ON_SUCCESS=true
                 - RATE_LIMIT_WINDOW=300

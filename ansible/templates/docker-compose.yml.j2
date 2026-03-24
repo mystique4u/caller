@@ -277,6 +277,7 @@ services:
       - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
       - WEBHOOK_SECRET={{ security_webhook_secret }}
       - MATRIX_ROOM={{ security_bot_room | default('') }}
+      - ADMIN_USER={{ matrix_admin_user | default('') and '@' + matrix_admin_user + ':' + domain_name }}
       - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
       - ALERT_ON_SUCCESS=true
       - RATE_LIMIT_WINDOW=300
