@@ -8,6 +8,7 @@ and posts room/join/leave events into a Matrix room.
 
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
 import sys
@@ -144,6 +145,40 @@ def _is_internal(nick):
     return n in INTERNAL_NICKS or n.startswith("focus") or n.startswith("jvb")
 
 
+# RFC-1918 + loopback + link-local + CGNAT + ULA IPv6 = VPN / private network
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),   # CGNAT
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),         # ULA (IPv6)
+    ipaddress.ip_network("fe80::/10"),        # link-local (IPv6)
+]
+
+
+def _classify_ip(ip):
+    """Return (plain_label, html_label) describing VPN status from the IP."""
+    if not ip:
+        return "", ""
+    # Strip X-Forwarded-For chain — take first (original client) address
+    raw = ip.split(",")[0].strip()
+    if not raw:
+        return "", ""
+    try:
+        addr = ipaddress.ip_address(raw)
+    except ValueError:
+        return f" · IP: {raw}", f" · IP: <code>{raw}</code>"
+
+    is_private = any(addr in net for net in _PRIVATE_NETWORKS)
+    if is_private:
+        return " · 🔒 VPN", " · 🔒 <strong>VPN</strong>"
+    else:
+        return f" · ⚠️ No VPN ({raw})", f" · ⚠️ <strong>No VPN</strong> (<code>{raw}</code>)"
+
+
 def _handle_event(event, room, participant=None, ip=None):
     url = _room_url(room)
 
@@ -162,11 +197,10 @@ def _handle_event(event, room, participant=None, ip=None):
             _send(f"🎥 Jitsi room started: {url}",
                   f'🎥 Jitsi room started: <a href="{url}">{url}</a>')
         _active_rooms[room].add(participant)
-        ip_part_plain = f" · IP: {ip}" if ip else ""
-        ip_part_html  = f" · IP: <code>{ip}</code>" if ip else ""
+        ip_plain, ip_html = _classify_ip(ip)
         _send(
-            f"➜ {participant} joined {room} ({url}){ip_part_plain}",
-            f'➜ <strong>{participant}</strong> joined <a href="{url}">{room}</a>{ip_part_html}',
+            f"➜ {participant} joined {room} ({url}){ip_plain}",
+            f'➜ <strong>{participant}</strong> joined <a href="{url}">{room}</a>{ip_html}',
         )
 
     elif event == "participant_left":
