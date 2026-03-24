@@ -120,9 +120,11 @@ jobs:
             echo "🔑 Generating new credentials"
             BOT_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/\n' | head -c 32)
             WEBHOOK_SECRET=$(openssl rand -hex 32)
-            MATRIX_ROOM_ID=""
+            # Try to recover room ID from persisted data volume as fallback
+            MATRIX_ROOM_ID=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+              "cat /opt/services/bots/jitsi-bot/data/room_id.txt 2>/dev/null | grep '^!' || true")
             ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} bash << SSHEOF
-          printf 'BOT_PASSWORD=%s\nWEBHOOK_SECRET=%s\n' "${BOT_PASSWORD}" "${WEBHOOK_SECRET}" \
+          printf 'BOT_PASSWORD=%s\nWEBHOOK_SECRET=%s\nMATRIX_ROOM_ID=%s\n' "${BOT_PASSWORD}" "${WEBHOOK_SECRET}" "${MATRIX_ROOM_ID}" \
             > ${CREDS_FILE}
           chmod 600 ${CREDS_FILE}
           SSHEOF
