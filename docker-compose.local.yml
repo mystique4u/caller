@@ -1,5 +1,15 @@
 version: '3.8'
 
+# Bot services (bots/jitsi-bot/, bots/security-bot/, etc.) are not run locally.
+# To run a bot locally, add a service entry here pointing to bots/<name>/.
+# Example:
+#   jitsi-bot:
+#     build: ./bots/jitsi-bot
+#     ports: ["3001:3001"]
+#     environment:
+#       - BOT_USERNAME=jitsi-bot
+#       - ...
+
 services:
   routemaker:
     build:

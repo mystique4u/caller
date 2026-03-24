@@ -1,0 +1,648 @@
+name: Deploy Security Bot
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'bots/security-bot/**'
+      - 'ansible/tasks/bot-security.yml'
+      - 'ansible/tasks/services.yml'
+      - '.github/workflows/deploy-security-bot.yml'
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment even without changes'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  BOT_USERNAME: security-bot
+
+# Required GitHub Secrets (all pre-existing, no new secrets needed):
+#   SSH_PRIVATE_KEY   — server SSH key
+#   TF_API_TOKEN      — Terraform Cloud token
+#   DOMAIN_NAME       — your domain (e.g. example.com)
+#   EMAIL_ADDRESS     — destination for post-deploy email
+#
+# Bot password, webhook secret, and Matrix room are auto-generated on first
+# deploy and stored in /opt/services/bots/security-bot/.credentials on the
+# server. They are reused on all subsequent deploys.
+
+jobs:
+  get-server-ip:
+    name: Get Server IP from Terraform
+    runs-on: ubuntu-latest
+    outputs:
+      server_ip: ${{ steps.terraform_output.outputs.server_ip }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Get Server IP
+        id: terraform_output
+        working-directory: terraform
+        run: |
+          SERVER_IP=$(terraform output -raw public_ip)
+          echo "server_ip=$SERVER_IP" >> $GITHUB_OUTPUT
+          echo "✅ Server IP: $SERVER_IP"
+
+  deploy-bot:
+    name: Deploy Security Bot
+    runs-on: ubuntu-latest
+    needs: get-server-ip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup SSH key
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${SERVER_IP} >> ~/.ssh/known_hosts
+
+      - name: Validate required secrets
+        env:
+          DOMAIN_NAME:    ${{ secrets.DOMAIN_NAME }}
+          EMAIL_ADDRESS:  ${{ secrets.EMAIL_ADDRESS }}
+        run: |
+          MISSING=()
+          [[ -z "$DOMAIN_NAME" ]]   && MISSING+=("DOMAIN_NAME")
+          [[ -z "$EMAIL_ADDRESS" ]] && MISSING+=("EMAIL_ADDRESS")
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "❌ Missing required GitHub Secrets: ${MISSING[*]}"
+            exit 1
+          fi
+          echo "✅ All required secrets present"
+
+      - name: Create bot data directory on server
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "mkdir -p /opt/services/bots/security-bot/data && chmod 700 /opt/services/bots/security-bot/data"
+
+      - name: Generate or load bot credentials (idempotent)
+        id: creds
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          CREDS_FILE=/opt/services/bots/security-bot/.credentials
+          EXISTING=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "cat ${CREDS_FILE} 2>/dev/null || true")
+
+          if [[ -n "$EXISTING" ]]; then
+            echo "🔑 Loading existing credentials from server"
+            BOT_PASSWORD=$(echo "$EXISTING" | grep '^BOT_PASSWORD=' | cut -d= -f2-)
+            WEBHOOK_SECRET=$(echo "$EXISTING" | grep '^WEBHOOK_SECRET=' | cut -d= -f2-)
+          else
+            echo "🔑 Generating new credentials"
+            BOT_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/\n' | head -c 32)
+            WEBHOOK_SECRET=$(openssl rand -hex 32)
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} bash << SSHEOF
+          printf 'BOT_PASSWORD=%s\nWEBHOOK_SECRET=%s\n' "${BOT_PASSWORD}" "${WEBHOOK_SECRET}" \
+            > ${CREDS_FILE}
+          chmod 600 ${CREDS_FILE}
+          SSHEOF
+          fi
+
+          # Mask both values so they never appear in logs
+          echo "::add-mask::${BOT_PASSWORD}"
+          echo "::add-mask::${WEBHOOK_SECRET}"
+          echo "bot_password=${BOT_PASSWORD}" >> $GITHUB_OUTPUT
+          echo "webhook_secret=${WEBHOOK_SECRET}" >> $GITHUB_OUTPUT
+
+      - name: Sync bot files to server
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          echo "📦 Syncing security-bot files to server..."
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='.credentials' \
+            --exclude='data/' \
+            bots/security-bot/ root@${SERVER_IP}:/opt/services/bots/security-bot/
+
+      - name: Copy Prosody plugin
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "mkdir -p /opt/services/jitsi/prosody/prosody-plugins-custom && \
+             cp /opt/services/bots/security-bot/prosody-plugin/mod_security_webhook.lua \
+                /opt/services/jitsi/prosody/prosody-plugins-custom/"
+
+      - name: Register Matrix bot user (idempotent)
+        env:
+          SERVER_IP:   ${{ needs.get-server-ip.outputs.server_ip }}
+          BOT_PASSWORD: ${{ steps.creds.outputs.bot_password }}
+        run: |
+          echo "Registering Matrix user: ${BOT_USERNAME}"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker exec matrix-synapse register_new_matrix_user \
+               -u ${BOT_USERNAME} -p '${BOT_PASSWORD}' \
+               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1 \
+             | grep -v 'User ID already taken' || true"
+
+      - name: Create or load Matrix monitoring room (idempotent)
+        id: room
+        env:
+          SERVER_IP:    ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME:  ${{ secrets.DOMAIN_NAME }}
+          BOT_PASSWORD: ${{ steps.creds.outputs.bot_password }}
+        run: |
+          ROOM_ID=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} bash << SSHEOF
+          CREDS=/opt/services/bots/security-bot/.credentials
+          EXISTING_ROOM=\$(grep '^ROOM_ID=' "\$CREDS" 2>/dev/null | cut -d= -f2- || true)
+          if [[ -n "\$EXISTING_ROOM" ]]; then
+            echo "\$EXISTING_ROOM"
+          else
+            # Wait for Synapse to be ready
+            for i in \$(seq 1 10); do
+              TOKEN=\$(curl -sf -X POST http://localhost:8008/_matrix/client/v3/login \
+                -H "Content-Type: application/json" \
+                -d '{"type":"m.login.password","user":"${BOT_USERNAME}","password":"${BOT_PASSWORD}"}' \
+                2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" 2>/dev/null || true)
+              [[ -n "\$TOKEN" ]] && break
+              sleep 5
+            done
+            if [[ -z "\$TOKEN" ]]; then
+              echo "MATRIX_LOGIN_FAILED"
+              exit 0
+            fi
+            RID=\$(curl -sf -X POST http://localhost:8008/_matrix/client/v3/createRoom \
+              -H "Authorization: Bearer \$TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"name":"Security Alerts","topic":"Real-time server security monitoring","preset":"private_chat"}' \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('room_id',''))")
+            echo "ROOM_ID=\$RID" >> "\$CREDS"
+            echo "\$RID"
+          fi
+          SSHEOF
+          )
+          echo "::add-mask::${ROOM_ID}" 2>/dev/null || true
+          echo "room_id=${ROOM_ID}" >> $GITHUB_OUTPUT
+          echo "✅ Monitoring room: ${ROOM_ID}"
+
+      - name: Write docker-compose override for security-bot
+        env:
+          SERVER_IP:       ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME:     ${{ secrets.DOMAIN_NAME }}
+          BOT_PASSWORD:    ${{ steps.creds.outputs.bot_password }}
+          WEBHOOK_SECRET:  ${{ steps.creds.outputs.webhook_secret }}
+          ROOM_ID:         ${{ steps.room.outputs.room_id }}
+        run: |
+          cat > /tmp/docker-compose.security-bot.yml << YAML
+          services:
+            security-bot:
+              build:
+                context: /opt/services/bots/security-bot
+                dockerfile: Dockerfile
+              image: security-bot:latest
+              container_name: security-bot
+              restart: unless-stopped
+              environment:
+                - BOT_USERNAME=${BOT_USERNAME}
+                - BOT_PASSWORD=${BOT_PASSWORD}
+                - MATRIX_DOMAIN=${DOMAIN_NAME}
+                - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
+                - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+                - MATRIX_ROOM=${ROOM_ID}
+                - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
+                - ALERT_ON_SUCCESS=true
+                - RATE_LIMIT_WINDOW=300
+                - POLL_INTERVAL=30
+              volumes:
+                - /var/log/auth.log:/var/log/auth.log:ro
+                - /var/log/syslog:/var/log/syslog:ro
+                - /opt/services/matrix/synapse:/synapse-logs:ro
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+                - /opt/services/bots/security-bot/data:/data
+              networks:
+                - services_network
+          networks:
+            services_network:
+              external: true
+          YAML
+          sed -i 's/^          //' /tmp/docker-compose.security-bot.yml
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+            /tmp/docker-compose.security-bot.yml \
+            root@${SERVER_IP}:/opt/services/docker-compose.security-bot.yml
+
+      - name: Build and start security-bot container
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            set -e
+            cd /opt/services
+            echo "Building security-bot image..."
+            docker build -t security-bot:latest /opt/services/bots/security-bot/ || {
+              echo "❌ Docker build failed"; exit 1;
+            }
+            echo "Starting security-bot container..."
+            docker rm -f security-bot 2>/dev/null || true
+            docker compose -f docker-compose.security-bot.yml up -d security-bot
+            echo "✅ Container started"
+          EOF
+
+      - name: Wire Prosody + Routemaker to security-bot webhook (idempotent)
+        env:
+          SERVER_IP:       ${{ needs.get-server-ip.outputs.server_ip }}
+          WEBHOOK_SECRET:  ${{ steps.creds.outputs.webhook_secret }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << ENVSSH
+            set -e
+            COMPOSE=/opt/services/docker-compose.yml
+
+            # --- Prosody ---
+            if ! grep -q "security_webhook" "\$COMPOSE"; then
+              sed -i "s|XMPP_MUC_MODULES=matrix_webhook|XMPP_MUC_MODULES=matrix_webhook,security_webhook|g" "\$COMPOSE"
+              sed -i "/MATRIX_WEBHOOK_SECRET/a\\      - SECURITY_WEBHOOK_URL=http://security-bot:3002/webhook\\n      - SECURITY_WEBHOOK_SECRET=${WEBHOOK_SECRET}" "\$COMPOSE"
+            else
+              sed -i "s|SECURITY_WEBHOOK_SECRET=.*|SECURITY_WEBHOOK_SECRET=${WEBHOOK_SECRET}|g" "\$COMPOSE"
+            fi
+            cp /opt/services/bots/security-bot/prosody-plugin/mod_security_webhook.lua \
+               /opt/services/jitsi/prosody/prosody-plugins-custom/
+            cd /opt/services && docker compose up -d --force-recreate jitsi-prosody
+            echo "✅ Prosody updated"
+
+            # --- Routemaker ---
+            if ! grep -q "SECURITY_BOT_WEBHOOK_URL" "\$COMPOSE"; then
+              sed -i "/NODE_ENV=production/a\\      - SECURITY_BOT_WEBHOOK_URL=http://security-bot:3002/webhook/routemaker\\n      - SECURITY_BOT_SECRET=${WEBHOOK_SECRET}" "\$COMPOSE"
+            else
+              sed -i "s|SECURITY_BOT_SECRET=.*|SECURITY_BOT_SECRET=${WEBHOOK_SECRET}|g" "\$COMPOSE"
+            fi
+            cd /opt/services && docker compose up -d --force-recreate routemaker
+            echo "✅ Routemaker updated"
+          ENVSSH
+
+      - name: Wait for bot to start
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          echo "⏳ Waiting for security-bot to come up..."
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            for i in $(seq 1 20); do
+              if docker ps | grep -q "security-bot.*Up"; then
+                echo "✅ security-bot is running"
+                exit 0
+              fi
+              echo "Waiting... ($i/20)"
+              sleep 3
+            done
+            echo "❌ security-bot did not start in time"
+            docker logs security-bot --tail 50
+            exit 1
+          EOF
+
+      - name: Health check
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            RESPONSE=$(curl -sf http://localhost:3002/health 2>&1) || true
+            echo "Health response: $RESPONSE"
+            if echo "$RESPONSE" | grep -q '"ok":true'; then
+              echo "✅ Bot health check passed"
+            else
+              echo "⚠️  Health check inconclusive — check logs:"
+              docker logs security-bot --tail 30
+            fi
+          EOF
+
+      - name: Send deployment notification email
+        env:
+          SERVER_IP:     ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME:   ${{ secrets.DOMAIN_NAME }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          ROOM_ID:       ${{ steps.room.outputs.room_id }}
+        run: |
+          if [[ -z "$EMAIL_ADDRESS" ]]; then
+            echo "EMAIL_ADDRESS not set — skipping notification"
+            exit 0
+          fi
+
+          cat > /tmp/security-bot-notification.txt << BODY
+          Security Bot Deployed — ${DOMAIN_NAME}
+
+          Your security-bot is now running and monitoring:
+
+            Bot Matrix ID  : @${BOT_USERNAME}:${DOMAIN_NAME}
+            Monitoring room: ${ROOM_ID}
+            Room alias     : #security-alerts:${DOMAIN_NAME} (if alias was set)
+
+          ── WHAT'S BEING MONITORED ────────────────────────────────────
+            • SSH logins and failed attempts (with GeoIP)
+            • VPN peer connect / disconnect events
+            • WireGuard invalid handshake attempts
+            • Matrix login success and failures
+            • Routemaker login success and failures
+            • Docker container crashes and OOM kills
+
+          ── NEXT STEPS ────────────────────────────────────────────────
+            1. In Element / your Matrix client, search for the room ID
+               above and join it — that is where alerts will appear.
+
+            2. If you want to receive alerts in a different room, update
+               the monitoring room by re-running this workflow after
+               editing /opt/services/bots/security-bot/.credentials:
+                 ROOM_ID=!yourRoomId:${DOMAIN_NAME}
+
+            3. (Optional) To enable higher-accuracy GeoIP, place a
+               GeoLite2-City.mmdb file in:
+               /opt/services/bots/security-bot/data/
+               (free download from https://dev.maxmind.com)
+
+          ── CREDENTIALS (server-side only) ────────────────────────────
+            Credentials are stored only on the server at:
+            /opt/services/bots/security-bot/.credentials  (chmod 600)
+            No new GitHub Secrets were required for this bot.
+
+          ──────────────────────────────────────────────────────────────
+          BODY
+          sed -i 's/^          //' /tmp/security-bot-notification.txt
+
+          # Ensure noreply account exists on mailserver
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker ps | grep -q mailserver && \
+             docker exec mailserver setup email add noreply@${DOMAIN_NAME} \
+               \$(openssl rand -base64 24) 2>&1 | grep -v 'already exists' || true" || true
+
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+            /tmp/security-bot-notification.txt \
+            root@${SERVER_IP}:/tmp/security-bot-notification.txt
+
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "python3 /opt/services/mailserver/send-email.py \
+              '${EMAIL_ADDRESS}' \
+              'Security Bot Deployed — ${DOMAIN_NAME}' \
+              /tmp/security-bot-notification.txt" \
+          && echo "✅ Notification emailed to ${EMAIL_ADDRESS}" \
+          || echo "⚠️  Email send failed — details are in the logs above"
+
+
+jobs:
+  get-server-ip:
+    name: Get Server IP from Terraform
+    runs-on: ubuntu-latest
+    outputs:
+      server_ip: ${{ steps.terraform_output.outputs.server_ip }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Get Server IP
+        id: terraform_output
+        working-directory: terraform
+        run: |
+          SERVER_IP=$(terraform output -raw public_ip)
+          echo "server_ip=$SERVER_IP" >> $GITHUB_OUTPUT
+          echo "✅ Server IP: $SERVER_IP"
+
+  deploy-bot:
+    name: Deploy Security Bot
+    runs-on: ubuntu-latest
+    needs: get-server-ip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup SSH key
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${SERVER_IP} >> ~/.ssh/known_hosts
+
+      - name: Validate required secrets
+        env:
+          SECURITY_BOT_PASSWORD:   ${{ secrets.SECURITY_BOT_PASSWORD }}
+          SECURITY_WEBHOOK_SECRET: ${{ secrets.SECURITY_WEBHOOK_SECRET }}
+          SECURITY_BOT_ROOM:       ${{ secrets.SECURITY_BOT_ROOM }}
+          DOMAIN_NAME:             ${{ secrets.DOMAIN_NAME }}
+        run: |
+          MISSING=()
+          [[ -z "$SECURITY_BOT_PASSWORD" ]]   && MISSING+=("SECURITY_BOT_PASSWORD")
+          [[ -z "$SECURITY_WEBHOOK_SECRET" ]] && MISSING+=("SECURITY_WEBHOOK_SECRET")
+          [[ -z "$SECURITY_BOT_ROOM" ]]       && MISSING+=("SECURITY_BOT_ROOM")
+          [[ -z "$DOMAIN_NAME" ]]             && MISSING+=("DOMAIN_NAME")
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "❌ Missing required GitHub Secrets: ${MISSING[*]}"
+            echo "   Add them at: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "✅ All required secrets present"
+
+      - name: Create bot data directory on server
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "mkdir -p /opt/services/bots/security-bot/data"
+
+      - name: Download GeoLite2 database (if license key provided)
+        env:
+          SERVER_IP:            ${{ needs.get-server-ip.outputs.server_ip }}
+          MAXMIND_LICENSE_KEY:  ${{ secrets.MAXMIND_LICENSE_KEY }}
+        if: ${{ secrets.MAXMIND_LICENSE_KEY != '' }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << EOF
+            DB=/opt/services/bots/security-bot/data/GeoLite2-City.mmdb
+            # Only re-download if DB is missing or older than 30 days
+            if [[ ! -f "\$DB" ]] || [[ \$(find "\$DB" -mtime +30) ]]; then
+              echo "Downloading GeoLite2-City database..."
+              curl -fsSL "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz" \
+                -o /tmp/GeoLite2-City.tar.gz
+              tar -xzf /tmp/GeoLite2-City.tar.gz -C /tmp --wildcards '*.mmdb'
+              find /tmp -name 'GeoLite2-City.mmdb' -exec cp {} "\$DB" \;
+              rm -f /tmp/GeoLite2-City.tar.gz
+              echo "✅ GeoLite2-City database installed"
+            else
+              echo "✅ GeoLite2-City database up to date"
+            fi
+          EOF
+
+      - name: Sync bot files to server
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          echo "📦 Syncing security-bot files to server..."
+          rsync -avz --delete \
+            --exclude='.git' \
+            bots/security-bot/ root@${SERVER_IP}:/opt/services/bots/security-bot/
+
+      - name: Copy Prosody plugin
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "mkdir -p /opt/services/jitsi/prosody/prosody-plugins-custom && \
+             cp /opt/services/bots/security-bot/prosody-plugin/mod_security_webhook.lua \
+                /opt/services/jitsi/prosody/prosody-plugins-custom/"
+
+      - name: Write docker-compose override for security-bot
+        env:
+          SERVER_IP:               ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME:             ${{ secrets.DOMAIN_NAME }}
+          SECURITY_BOT_USER:       ${{ secrets.SECURITY_BOT_USER }}
+          SECURITY_BOT_PASSWORD:   ${{ secrets.SECURITY_BOT_PASSWORD }}
+          SECURITY_WEBHOOK_SECRET: ${{ secrets.SECURITY_WEBHOOK_SECRET }}
+          SECURITY_BOT_ROOM:       ${{ secrets.SECURITY_BOT_ROOM }}
+        run: |
+          BOT_USER="${SECURITY_BOT_USER:-security-bot}"
+          cat > /tmp/docker-compose.security-bot.yml << YAML
+          services:
+            security-bot:
+              build:
+                context: /opt/services/bots/security-bot
+                dockerfile: Dockerfile
+              image: security-bot:latest
+              container_name: security-bot
+              restart: unless-stopped
+              environment:
+                - BOT_USERNAME=${BOT_USER}
+                - BOT_PASSWORD=${SECURITY_BOT_PASSWORD}
+                - MATRIX_DOMAIN=${DOMAIN_NAME}
+                - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
+                - WEBHOOK_SECRET=${SECURITY_WEBHOOK_SECRET}
+                - MATRIX_ROOM=${SECURITY_BOT_ROOM}
+              networks:
+                - services_network
+          networks:
+            services_network:
+              external: true
+          YAML
+          sed -i 's/^          //' /tmp/docker-compose.security-bot.yml
+          echo "--- Rendered override ---"
+          cat /tmp/docker-compose.security-bot.yml
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+            /tmp/docker-compose.security-bot.yml \
+            root@${SERVER_IP}:/opt/services/docker-compose.security-bot.yml
+
+      - name: Register Matrix bot user (idempotent)
+        env:
+          SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
+          SECURITY_BOT_USER:     ${{ secrets.SECURITY_BOT_USER }}
+          SECURITY_BOT_PASSWORD: ${{ secrets.SECURITY_BOT_PASSWORD }}
+        run: |
+          BOT_USER="${SECURITY_BOT_USER:-security-bot}"
+          echo "Registering Matrix user: ${BOT_USER}"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker exec matrix-synapse register_new_matrix_user \
+               -u ${BOT_USER} -p '${SECURITY_BOT_PASSWORD}' \
+               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1 \
+             | grep -v 'User ID already taken' || true"
+
+      - name: Build and start security-bot container
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            set -e
+            cd /opt/services
+            echo "Building security-bot image..."
+            docker build -t security-bot:latest /opt/services/bots/security-bot/ || {
+              echo "❌ Docker build failed"; exit 1;
+            }
+            echo "Starting security-bot container..."
+            docker rm -f security-bot 2>/dev/null || true
+            docker compose -f docker-compose.security-bot.yml up -d security-bot
+            echo "✅ Container started"
+          EOF
+
+      - name: Ensure Prosody has security webhook env vars and Lua plugin
+        env:
+          SERVER_IP:               ${{ needs.get-server-ip.outputs.server_ip }}
+          SECURITY_WEBHOOK_SECRET: ${{ secrets.SECURITY_WEBHOOK_SECRET }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << ENVSSH
+            set -e
+            COMPOSE=/opt/services/docker-compose.yml
+
+            # Idempotently add security_webhook to XMPP_MUC_MODULES
+            if ! grep -q "security_webhook" "\$COMPOSE"; then
+              echo "Adding security_webhook to XMPP_MUC_MODULES..."
+              sed -i "s|XMPP_MUC_MODULES=matrix_webhook|XMPP_MUC_MODULES=matrix_webhook,security_webhook|g" "\$COMPOSE"
+              sed -i "/MATRIX_WEBHOOK_SECRET/a\\      - SECURITY_WEBHOOK_URL=http://security-bot:3002/webhook\\n      - SECURITY_WEBHOOK_SECRET=${SECURITY_WEBHOOK_SECRET}" "\$COMPOSE"
+            else
+              echo "security_webhook module already present — updating secret ✅"
+              sed -i "s|SECURITY_WEBHOOK_SECRET=.*|SECURITY_WEBHOOK_SECRET=${SECURITY_WEBHOOK_SECRET}|g" "\$COMPOSE"
+            fi
+
+            # Ensure plugin file is in place
+            cp /opt/services/bots/security-bot/prosody-plugin/mod_security_webhook.lua \
+               /opt/services/jitsi/prosody/prosody-plugins-custom/
+
+            # Recreate jitsi-prosody to pick up env + plugin
+            cd /opt/services
+            docker compose up -d --force-recreate jitsi-prosody
+            echo "✅ Prosody restarted with security_webhook module"
+          ENVSSH
+
+      - name: Wait for bot to start
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          echo "⏳ Waiting for security-bot to come up..."
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            for i in $(seq 1 20); do
+              if docker ps | grep -q "security-bot.*Up"; then
+                echo "✅ security-bot is running"
+                exit 0
+              fi
+              echo "Waiting... ($i/20)"
+              sleep 3
+            done
+            echo "❌ security-bot did not start in time"
+            docker logs security-bot --tail 50
+            exit 1
+          EOF
+
+      - name: Health check
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            RESPONSE=$(curl -sf http://localhost:3002/health 2>&1) || true
+            echo "Health response: $RESPONSE"
+            if echo "$RESPONSE" | grep -q '"ok":true'; then
+              echo "✅ Bot health check passed"
+            else
+              echo "⚠️  Health check inconclusive — check logs:"
+              docker logs security-bot --tail 30
+            fi
+          EOF

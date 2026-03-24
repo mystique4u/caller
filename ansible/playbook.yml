@@ -32,6 +32,11 @@
     matrix_bot_password: "{{ lookup('env', 'MATRIX_BOT_PASSWORD') }}"
     matrix_webhook_secret: "{{ lookup('env', 'MATRIX_WEBHOOK_SECRET') }}"
     matrix_bot_room: "{{ lookup('env', 'MATRIX_BOT_ROOM') | default('', true) }}"
+    # Security Bot
+    security_bot_user: "{{ lookup('env', 'SECURITY_BOT_USER') | default('security-bot', true) }}"
+    security_bot_password: "{{ lookup('env', 'SECURITY_BOT_PASSWORD') }}"
+    security_webhook_secret: "{{ lookup('env', 'SECURITY_WEBHOOK_SECRET') }}"
+    security_bot_room: "{{ lookup('env', 'SECURITY_BOT_ROOM') | default('', true) }}"
 
   tasks:
     - name: System setup and Docker installation
@@ -59,8 +64,12 @@
       tags: ['matrix', 'synapse']
 
     - name: Deploy Jitsi Matrix Bot
-      include_tasks: tasks/bot.yml
+      include_tasks: tasks/bot-jitsi.yml
       tags: ['bot', 'jitsi-bot']
+
+    - name: Deploy Security Bot
+      include_tasks: tasks/bot-security.yml
+      tags: ['bot', 'security-bot']
 
     - name: Deploy RouteMaker application
       include_tasks: tasks/routemaker.yml

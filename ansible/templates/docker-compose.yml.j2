@@ -225,6 +225,10 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - SESSION_SECRET={{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}
+{% if security_bot_password is defined and security_bot_password != '' %}
+      - SECURITY_BOT_WEBHOOK_URL=http://security-bot:3002/webhook/routemaker
+      - SECURITY_BOT_SECRET={{ security_webhook_secret }}
+{% endif %}
     volumes:
       - /opt/services/routemaker/data:/app/data
     networks:
@@ -239,7 +243,7 @@ services:
 
   jitsi-bot:
     build:
-      context: /opt/services/jitsi-bot
+      context: /opt/services/bots/jitsi-bot
       dockerfile: Dockerfile
     image: jitsi-bot:latest
     container_name: jitsi-bot
@@ -257,6 +261,41 @@ services:
     depends_on:
       - matrix-synapse
       - jitsi-prosody
+
+{% if security_bot_password is defined and security_bot_password != '' %}
+  security-bot:
+    build:
+      context: /opt/services/bots/security-bot
+      dockerfile: Dockerfile
+    image: security-bot:latest
+    container_name: security-bot
+    restart: unless-stopped
+    environment:
+      - BOT_USERNAME={{ security_bot_user }}
+      - BOT_PASSWORD={{ security_bot_password }}
+      - MATRIX_DOMAIN={{ domain_name }}
+      - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
+      - WEBHOOK_SECRET={{ security_webhook_secret }}
+      - MATRIX_ROOM={{ security_bot_room | default('') }}
+      - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
+      - ALERT_ON_SUCCESS=true
+      - RATE_LIMIT_WINDOW=300
+      - POLL_INTERVAL=30
+    volumes:
+      # Host log files for SSH and WireGuard kernel events (read-only)
+      - /var/log/auth.log:/var/log/auth.log:ro
+      - /var/log/syslog:/var/log/syslog:ro
+      # Synapse access logs for Matrix login monitoring (read-only)
+      - /opt/services/matrix/synapse:/synapse-logs:ro
+      # Docker socket for WireGuard peer polling and container event monitoring
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Persistent data directory (GeoLite2-City.mmdb lives here)
+      - /opt/services/bots/security-bot/data:/data
+    networks:
+      - services
+    depends_on:
+      - matrix-synapse
+{% endif %}
 
   mailserver:
     image: docker.io/mailserver/docker-mailserver:latest

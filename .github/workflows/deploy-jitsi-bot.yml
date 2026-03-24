@@ -6,8 +6,8 @@ on:
       - main
       - feature/jitsi-matrix-bot
     paths:
-      - 'jitsi-bot/**'
-      - 'ansible/tasks/bot.yml'
+      - 'bots/jitsi-bot/**'
+      - 'ansible/tasks/bot-jitsi.yml'
       - 'ansible/tasks/services.yml'
       - '.github/workflows/deploy-jitsi-bot.yml'
   workflow_dispatch:
@@ -95,7 +95,7 @@ jobs:
           echo "📦 Syncing jitsi-bot files to server..."
           rsync -avz --delete \
             --exclude='.git' \
-            jitsi-bot/ root@${SERVER_IP}:/opt/services/jitsi-bot/
+            bots/jitsi-bot/ root@${SERVER_IP}:/opt/services/bots/jitsi-bot/
 
       - name: Copy Prosody plugin
         env:
@@ -103,7 +103,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "mkdir -p /opt/services/jitsi/prosody/prosody-plugins-custom && \
-             cp /opt/services/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
+             cp /opt/services/bots/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
                 /opt/services/jitsi/prosody/prosody-plugins-custom/"
 
       - name: Write docker-compose override for jitsi-bot
@@ -122,7 +122,7 @@ jobs:
           services:
             jitsi-bot:
               build:
-                context: /opt/services/jitsi-bot
+                context: /opt/services/bots/jitsi-bot
                 dockerfile: Dockerfile
               image: jitsi-bot:latest
               container_name: jitsi-bot
@@ -171,7 +171,7 @@ jobs:
             set -e
             cd /opt/services
             echo "Building jitsi-bot image..."
-            docker build -t jitsi-bot:latest /opt/services/jitsi-bot/ || {
+            docker build -t jitsi-bot:latest /opt/services/bots/jitsi-bot/ || {
               echo "❌ Docker build failed"; exit 1;
             }
             echo "Starting jitsi-bot container..."
@@ -208,7 +208,7 @@ jobs:
             fi
 
             # Ensure plugin file is in place
-            cp /opt/services/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
+            cp /opt/services/bots/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
                /opt/services/jitsi/prosody/prosody-plugins-custom/
 
             # Recreate jitsi-prosody to pick up env + plugin

@@ -3,8 +3,8 @@
 
 - name: Copy jitsi-bot application files
   synchronize:
-    src: "{{ playbook_dir }}/../jitsi-bot/"
-    dest: /opt/services/jitsi-bot/
+    src: "{{ playbook_dir }}/../bots/jitsi-bot/"
+    dest: /opt/services/bots/jitsi-bot/
     delete: yes
     rsync_opts:
       - "--exclude=node_modules"
@@ -12,7 +12,7 @@
 
 - name: Copy Prosody webhook plugin to custom plugins directory
   copy:
-    src: /opt/services/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua
+    src: /opt/services/bots/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua
     dest: /opt/services/jitsi/prosody/prosody-plugins-custom/mod_matrix_webhook.lua
     mode: '0644'
     remote_src: yes

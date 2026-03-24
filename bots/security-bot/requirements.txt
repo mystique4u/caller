@@ -1,0 +1,7 @@
+# GeoIP — local MaxMind GeoLite2 database (optional; falls back to ip-api.com)
+# To use: download GeoLite2-City.mmdb from https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+# and set GEOIP_DB_PATH=/data/GeoLite2-City.mmdb in the container environment.
+geoip2>=4.8.0
+
+# Docker SDK — used to exec into wireguard-ui container (`wg show`) and stream events
+docker>=7.0.0
