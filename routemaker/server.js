@@ -18,6 +18,24 @@ const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-production-' + Math.random().toString(36);
 
+// Security-bot webhook — fire-and-forget, never blocks auth flow
+const SECURITY_BOT_URL    = process.env.SECURITY_BOT_WEBHOOK_URL || 'http://security-bot:3002/webhook/routemaker';
+const SECURITY_BOT_SECRET = process.env.SECURITY_BOT_SECRET || '';
+
+function notifySecurityBot(event, data) {
+  const payload = JSON.stringify({ event, ...data, timestamp: Date.now() });
+  const headers = { 'Content-Type': 'application/json' };
+  if (SECURITY_BOT_SECRET) {
+    const crypto = require('crypto');
+    headers['X-Webhook-Secret'] = crypto
+      .createHmac('sha256', SECURITY_BOT_SECRET)
+      .update(payload)
+      .digest('hex');
+  }
+  fetch(SECURITY_BOT_URL, { method: 'POST', headers, body: payload })
+    .catch(err => console.error('[security-webhook]', err.message));
+}
+
 // Database initialization
 const db = new Database('./data/routemaker.db');
 db.pragma('journal_mode = WAL');
@@ -156,6 +174,11 @@ app.post('/api/login', (req, res) => {
     
     if (!user) {
       console.log('User not found:', username);
+      notifySecurityBot('login_failed', {
+        username,
+        ip: req.headers['x-forwarded-for'] || req.ip,
+        reason: 'user_not_found',
+      });
       return res.status(401).json({ error: 'Invalid username or password' });
     }
     
@@ -163,6 +186,11 @@ app.post('/api/login', (req, res) => {
     console.log('Password match:', passwordMatch);
     
     if (!passwordMatch) {
+      notifySecurityBot('login_failed', {
+        username,
+        ip: req.headers['x-forwarded-for'] || req.ip,
+        reason: 'wrong_password',
+      });
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
@@ -177,6 +205,10 @@ app.post('/api/login', (req, res) => {
     });
     
     console.log('Login successful:', username);
+    notifySecurityBot('login_success', {
+      username,
+      ip: req.headers['x-forwarded-for'] || req.ip,
+    });
     
     res.json({ 
       success: true, 

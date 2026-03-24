@@ -8,8 +8,10 @@ and posts room/join/leave events into a Matrix room.
 
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
+import pathlib
 import sys
 import time
 import urllib.parse
@@ -20,10 +22,14 @@ MATRIX_INTERNAL_URL = os.environ.get("MATRIX_INTERNAL_URL", "http://matrix-synap
 BOT_USERNAME        = os.environ.get("BOT_USERNAME", "jitsi-bot")
 BOT_PASSWORD        = os.environ.get("BOT_PASSWORD", "")
 MATRIX_DOMAIN       = os.environ.get("MATRIX_DOMAIN", "")
-MATRIX_ROOM         = os.environ.get("MATRIX_ROOM", "").strip()
 JITSI_PUBLIC_URL    = os.environ.get("JITSI_PUBLIC_URL", "https://meet.example.com").rstrip("/")
 WEBHOOK_SECRET      = os.environ.get("WEBHOOK_SECRET", "")
+MATRIX_ROOM_ID      = os.environ.get("MATRIX_ROOM_ID", "")   # if set, use this room directly
 PORT                = int(os.environ.get("PORT", "3001"))
+
+_DATA_DIR   = pathlib.Path("/data")
+_TOKEN_FILE = _DATA_DIR / "token.txt"
+_ROOM_FILE  = _DATA_DIR / "room_id.txt"
 
 if not BOT_PASSWORD:
     print("[config] BOT_PASSWORD is required", file=sys.stderr)
@@ -61,6 +67,22 @@ def _matrix_request(method, path, body=None, token=None):
 
 def _login():
     global _access_token
+    # Reuse a persisted token to avoid login rate-limits on restart
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if _TOKEN_FILE.exists():
+        try:
+            saved = _TOKEN_FILE.read_text().strip()
+            if saved:
+                status, body = _matrix_request("GET", "/_matrix/client/v3/account/whoami", token=saved)
+                if status == 200:
+                    _access_token = saved
+                    print(f"[matrix] Reusing persisted token for @{BOT_USERNAME}:{MATRIX_DOMAIN}")
+                    return
+        except Exception:
+            pass
+        _TOKEN_FILE.unlink(missing_ok=True)
+        print("[matrix] Persisted token invalid — re-authenticating")
+
     status, body = _matrix_request("POST", "/_matrix/client/v3/login", {
         "type":       "m.login.password",
         "identifier": {"type": "m.id.user", "user": BOT_USERNAME},
@@ -72,37 +94,52 @@ def _login():
     if status != 200:
         raise RuntimeError(f"Login failed ({status}): {body}")
     _access_token = body["access_token"]
+    _TOKEN_FILE.write_text(_access_token)
     print(f"[matrix] Logged in as @{BOT_USERNAME}:{MATRIX_DOMAIN}")
 
 
 def _ensure_room():
     global _resolved_room
-    alias = f"#jitsi-notifications:{MATRIX_DOMAIN}"
 
-    if MATRIX_ROOM:
-        target = MATRIX_ROOM
-    else:
-        # Try to create; fall back to joining if it already exists
-        status, body = _matrix_request("POST", "/_matrix/client/v3/createRoom", {
-            "room_alias_name": "jitsi-notifications",
-            "name":            "Jitsi Notifications",
-            "topic":           "Automatic Jitsi meeting events",
-            "preset":          "public_chat",
-        }, _access_token)
-        if status == 200:
-            _resolved_room = body["room_id"]
-            print(f"[matrix] Created room {_resolved_room}  alias: {alias}")
-            print(f"[matrix] TIP: set MATRIX_ROOM={_resolved_room} to pin this room.")
+    # 1. Explicit room ID via env var (highest priority — set by deploy)
+    if MATRIX_ROOM_ID.startswith("!"):
+        _resolved_room = MATRIX_ROOM_ID
+        _ROOM_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _ROOM_FILE.write_text(_resolved_room)
+        print(f"[matrix] Using configured room {_resolved_room}")
+        return
+
+    # 2. Persisted room ID from previous run
+    if _ROOM_FILE.exists():
+        rid = _ROOM_FILE.read_text().strip()
+        if rid.startswith("!"):
+            _resolved_room = rid
+            print(f"[matrix] Using persisted room {_resolved_room}")
             return
-        # Room already exists — resolve alias
-        status, body = _matrix_request(
-            "GET",
-            f"/_matrix/client/v3/directory/room/{urllib.parse.quote(alias)}",
-            token=_access_token,
-        )
-        if status != 200:
-            raise RuntimeError(f"Cannot create or find {alias}: {body}")
-        target = body["room_id"]
+
+    # 3. Try to create room (public so the admin can easily join)
+    alias = f"#jitsi-notifications:{MATRIX_DOMAIN}"
+    status, body = _matrix_request("POST", "/_matrix/client/v3/createRoom", {
+        "room_alias_name": "jitsi-notifications",
+        "name":            "Jitsi Notifications",
+        "topic":           "Automatic Jitsi meeting events",
+        "preset":          "public_chat",
+    }, _access_token)
+    if status == 200:
+        _resolved_room = body["room_id"]
+        _ROOM_FILE.write_text(_resolved_room)
+        print(f"[matrix] Created room {_resolved_room}  alias: {alias}")
+        return
+
+    # 4. Room already exists — resolve alias
+    status, body = _matrix_request(
+        "GET",
+        f"/_matrix/client/v3/directory/room/{urllib.parse.quote(alias)}",
+        token=_access_token,
+    )
+    if status != 200:
+        raise RuntimeError(f"Cannot create or find {alias}: {body}")
+    target = body["room_id"]
 
     # Join (idempotent)
     status, body = _matrix_request(
@@ -112,6 +149,7 @@ def _ensure_room():
         _access_token,
     )
     _resolved_room = body.get("room_id", target)
+    _ROOM_FILE.write_text(_resolved_room)
     print(f"[matrix] Using room {_resolved_room}")
 
 
@@ -144,6 +182,40 @@ def _is_internal(nick):
     return n in INTERNAL_NICKS or n.startswith("focus") or n.startswith("jvb")
 
 
+# RFC-1918 + loopback + link-local + CGNAT + ULA IPv6 = VPN / private network
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),   # CGNAT
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),         # ULA (IPv6)
+    ipaddress.ip_network("fe80::/10"),        # link-local (IPv6)
+]
+
+
+def _classify_ip(ip):
+    """Return (plain_label, html_label) describing VPN status from the IP."""
+    if not ip:
+        return "", ""
+    # Strip X-Forwarded-For chain — take first (original client) address
+    raw = ip.split(",")[0].strip()
+    if not raw:
+        return "", ""
+    try:
+        addr = ipaddress.ip_address(raw)
+    except ValueError:
+        return f" · IP: {raw}", f" · IP: <code>{raw}</code>"
+
+    is_private = any(addr in net for net in _PRIVATE_NETWORKS)
+    if is_private:
+        return " · 🔒 VPN", " · 🔒 <strong>VPN</strong>"
+    else:
+        return f" · ⚠️ No VPN ({raw})", f" · ⚠️ <strong>No VPN</strong> (<code>{raw}</code>)"
+
+
 def _handle_event(event, room, participant=None, ip=None):
     url = _room_url(room)
 
@@ -162,11 +234,10 @@ def _handle_event(event, room, participant=None, ip=None):
             _send(f"🎥 Jitsi room started: {url}",
                   f'🎥 Jitsi room started: <a href="{url}">{url}</a>')
         _active_rooms[room].add(participant)
-        ip_part_plain = f" · IP: {ip}" if ip else ""
-        ip_part_html  = f" · IP: <code>{ip}</code>" if ip else ""
+        ip_plain, ip_html = _classify_ip(ip)
         _send(
-            f"➜ {participant} joined {room} ({url}){ip_part_plain}",
-            f'➜ <strong>{participant}</strong> joined <a href="{url}">{room}</a>{ip_part_html}',
+            f"➜ {participant} joined {room} ({url}){ip_plain}",
+            f'➜ <strong>{participant}</strong> joined <a href="{url}">{room}</a>{ip_html}',
         )
 
     elif event == "participant_left":

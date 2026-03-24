@@ -72,11 +72,18 @@ echo "🔍 Templates..."
 python3 - << 'PYEOF'
 import yaml, json, sys, re
 
+def strip_jinja2(text):
+    # Remove {% ... %} block tags (replace whole lines containing only a tag with empty)
+    text = re.sub(r'[ \t]*\{%-?.*?-?%\}[ \t]*\n?', '\n', text, flags=re.DOTALL)
+    # Replace {{ ... }} expressions with a safe placeholder
+    text = re.sub(r'\{\{[^}]+\}\}', 'placeholder', text)
+    return text
+
 for path, loader in [
     ('ansible/templates/docker-compose.yml.j2', 'yaml'),
 ]:
     try:
-        content = re.sub(r'\{\{[^}]+\}\}', 'placeholder', open(path).read())
+        content = strip_jinja2(open(path).read())
         yaml.safe_load(content)
         print(f'\033[0;32m    ✅ {path}\033[0m')
     except Exception as e:
@@ -85,7 +92,7 @@ for path, loader in [
 
 for path in ['ansible/templates/element-config.json.j2']:
     try:
-        import os; content = re.sub(r'\{\{[^}]+\}\}', 'placeholder', open(path).read()) if os.path.exists(path) else None
+        import os; content = strip_jinja2(open(path).read()) if os.path.exists(path) else None
         if content: json.loads(content)
         if content: print(f'\033[0;32m    ✅ {path}\033[0m')
     except Exception as e:

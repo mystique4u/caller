@@ -1,0 +1,27 @@
+---
+# Security Bot Setup Tasks
+
+- name: Copy security-bot application files
+  synchronize:
+    src: "{{ playbook_dir }}/../bots/security-bot/"
+    dest: /opt/services/bots/security-bot/
+    delete: yes
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.git"
+      - "--exclude=.credentials"
+      - "--exclude=data"
+
+- name: Create security-bot data directory
+  file:
+    path: /opt/services/bots/security-bot/data
+    state: directory
+    mode: '0700'
+
+- name: Copy security-bot Prosody plugin to custom plugins directory
+  copy:
+    src: /opt/services/bots/security-bot/prosody-plugin/mod_security_webhook.lua
+    dest: /opt/services/jitsi/prosody/prosody-plugins-custom/mod_security_webhook.lua
+    mode: '0644'
+    remote_src: yes
+  when: security_bot_password is defined and security_bot_password != ''

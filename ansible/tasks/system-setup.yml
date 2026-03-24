@@ -67,3 +67,44 @@
       - python3-docker
     state: present
   ignore_errors: yes
+
+# ── SSH hardening ──────────────────────────────────────────────────────────────
+
+- name: Disable SSH password authentication (key-only)
+  copy:
+    dest: /etc/ssh/sshd_config.d/99-no-password-auth.conf
+    content: |
+      PasswordAuthentication no
+      ChallengeResponseAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      MaxAuthTries 3
+    mode: "0644"
+  notify: Restart ssh
+
+- name: Install and configure fail2ban
+  apt:
+    name: fail2ban
+    state: present
+
+- name: Write fail2ban SSH jail config
+  copy:
+    dest: /etc/fail2ban/jail.d/sshd.local
+    content: |
+      [sshd]
+      enabled   = true
+      port      = ssh
+      filter    = sshd
+      logpath   = /var/log/auth.log
+      maxretry  = 5
+      findtime  = 600
+      bantime   = 3600
+      ignoreip  = 127.0.0.1/8
+    mode: "0644"
+  notify: Restart fail2ban
+
+- name: Enable and start fail2ban
+  systemd:
+    name: fail2ban
+    state: started
+    enabled: yes
