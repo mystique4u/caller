@@ -180,6 +180,22 @@ jobs:
             echo "✅ Container started"
           EOF
 
+      - name: Migrate away from legacy path (idempotent)
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
+            # Remove old flat path that existed before the bots/ refactor.
+            # Safe to run multiple times — does nothing if already gone.
+            if [[ -d /opt/services/jitsi-bot ]]; then
+              echo "🧹 Removing legacy /opt/services/jitsi-bot/ ..."
+              rm -rf /opt/services/jitsi-bot
+              echo "✅ Legacy path removed"
+            else
+              echo "✅ Legacy path already gone"
+            fi
+          EOF
+
       - name: Ensure Prosody has webhook env vars and Lua plugin
         env:
           SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
