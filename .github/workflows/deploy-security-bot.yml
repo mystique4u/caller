@@ -112,12 +112,14 @@ jobs:
           EXISTING=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "cat ${CREDS_FILE} 2>/dev/null || true")
 
+          NEW_CREDS=false
           if [[ -n "$EXISTING" ]]; then
             echo "🔑 Loading existing credentials from server"
             BOT_PASSWORD=$(echo "$EXISTING" | grep '^BOT_PASSWORD=' | cut -d= -f2-)
             WEBHOOK_SECRET=$(echo "$EXISTING" | grep '^WEBHOOK_SECRET=' | cut -d= -f2-)
           else
             echo "🔑 Generating new credentials"
+            NEW_CREDS=true
             BOT_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/\n' | head -c 32)
             WEBHOOK_SECRET=$(openssl rand -hex 32)
             ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} bash << SSHEOF
@@ -132,6 +134,7 @@ jobs:
           echo "::add-mask::${WEBHOOK_SECRET}"
           echo "bot_password=${BOT_PASSWORD}" >> $GITHUB_OUTPUT
           echo "webhook_secret=${WEBHOOK_SECRET}" >> $GITHUB_OUTPUT
+          echo "new_creds=${NEW_CREDS}" >> $GITHUB_OUTPUT
 
       - name: Sync bot files to server
         env:
@@ -155,15 +158,22 @@ jobs:
 
       - name: Register Matrix bot user (idempotent)
         env:
-          SERVER_IP:   ${{ needs.get-server-ip.outputs.server_ip }}
+          SERVER_IP:    ${{ needs.get-server-ip.outputs.server_ip }}
           BOT_PASSWORD: ${{ steps.creds.outputs.bot_password }}
+          NEW_CREDS:    ${{ steps.creds.outputs.new_creds }}
         run: |
           echo "Registering Matrix user: ${BOT_USERNAME}"
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+          RESULT=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "docker exec matrix-synapse register_new_matrix_user \
                -u ${BOT_USERNAME} -p '${BOT_PASSWORD}' \
-               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1 \
-             | grep -v 'User ID already taken' || true"
+               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1")
+          if echo "$RESULT" | grep -q 'User ID already taken'; then
+            if [[ "${NEW_CREDS}" == "true" ]]; then
+              echo "🔄 User exists but credentials were regenerated — updating DB password"
+              ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+                "ADMIN_TOKEN=\$(docker exec matrix-postgres psql -U synapse synapse -tAc \"SELECT token FROM access_tokens WHERE user_id IN (SELECT name FROM users WHERE admin=1) ORDER BY id DESC LIMIT 1;\") && docker exec matrix-synapse wget -q -O/dev/null --method=PUT --header=Content-Type:application/json --header=\"Authorization: Bearer \$ADMIN_TOKEN\" --body-data=\"{\\\"password\\\":\\\"${BOT_PASSWORD}\\\"}\" http://localhost:8008/_synapse/admin/v2/users/%40${BOT_USERNAME}%3A${MATRIX_DOMAIN} && echo OK"
+            fi
+          fi
 
       - name: Write docker-compose override for security-bot
         env:
