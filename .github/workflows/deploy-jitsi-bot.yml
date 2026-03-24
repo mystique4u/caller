@@ -173,7 +173,11 @@ jobs:
             if [[ "${NEW_CREDS}" == "true" ]]; then
               echo "🔄 User exists but credentials were regenerated — updating DB password"
               ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
-                "ADMIN_TOKEN=\$(docker exec matrix-postgres psql -U synapse synapse -tAc \"SELECT token FROM access_tokens WHERE user_id IN (SELECT name FROM users WHERE admin=1) ORDER BY id DESC LIMIT 1;\") && curl -s -o /dev/null -w '%{http_code}' -X PUT -H 'Content-Type: application/json' -H \"Authorization: Bearer \$ADMIN_TOKEN\" -d \"{\\\"password\\\":\\\"${BOT_PASSWORD}\\\"}\" http://localhost:8008/_synapse/admin/v2/users/%40${BOT_USERNAME}%3A${MATRIX_DOMAIN} && echo OK"
+                "ADMIN_TOKEN=\$(docker exec matrix-postgres psql -U synapse synapse -tAc \"SELECT token FROM access_tokens WHERE user_id IN (SELECT name FROM users WHERE admin=1) ORDER BY id DESC LIMIT 1;\" | tr -d ' \n\r') && \
+                 docker exec -e \"BOT_PW=${BOT_PASSWORD}\" -e \"BOT_ADMIN=\$ADMIN_TOKEN\" \
+                 matrix-synapse python3 -c \
+                 \"import urllib.request,json,os;u='${BOT_USERNAME}';d='${MATRIX_DOMAIN}';pw=os.environ['BOT_PW'];tok=os.environ['BOT_ADMIN'];req=urllib.request.Request('http://localhost:8008/_synapse/admin/v2/users/%40'+u+'%3A'+d,json.dumps({'password':pw}).encode(),{'Content-Type':'application/json','Authorization':'Bearer '+tok},method='PUT');print(urllib.request.urlopen(req).status)\" \
+                 && echo OK"
             fi
           fi
 
