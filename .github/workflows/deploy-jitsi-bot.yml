@@ -265,7 +265,7 @@ jobs:
 
             cp /opt/services/bots/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
                /opt/services/jitsi/prosody/prosody-plugins-custom/
-            cd /opt/services && docker compose up -d --force-recreate jitsi-prosody
+            cd /opt/services && docker compose up -d jitsi-prosody
             echo "✅ Prosody restarted with webhook module"
           ENVSSH
 
