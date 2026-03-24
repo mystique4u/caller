@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/jitsi-matrix-bot
     paths:
       - 'bots/jitsi-bot/**'
       - 'ansible/tasks/bot-jitsi.yml'

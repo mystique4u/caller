@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - main
-      - feature/smtp-server
     paths:
       - 'terraform/**'
       - 'ansible/**'
-      - '.github/workflows/**'
+      - '!ansible/tasks/bot-jitsi.yml'
+      - '!ansible/tasks/bot-security.yml'
   workflow_dispatch:
     inputs:
       action:
