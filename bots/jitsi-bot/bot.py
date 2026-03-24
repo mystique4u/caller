@@ -11,6 +11,7 @@ import http.client
 import ipaddress
 import json
 import os
+import pathlib
 import sys
 import time
 import urllib.parse
@@ -21,10 +22,13 @@ MATRIX_INTERNAL_URL = os.environ.get("MATRIX_INTERNAL_URL", "http://matrix-synap
 BOT_USERNAME        = os.environ.get("BOT_USERNAME", "jitsi-bot")
 BOT_PASSWORD        = os.environ.get("BOT_PASSWORD", "")
 MATRIX_DOMAIN       = os.environ.get("MATRIX_DOMAIN", "")
-MATRIX_ROOM         = os.environ.get("MATRIX_ROOM", "").strip()
 JITSI_PUBLIC_URL    = os.environ.get("JITSI_PUBLIC_URL", "https://meet.example.com").rstrip("/")
 WEBHOOK_SECRET      = os.environ.get("WEBHOOK_SECRET", "")
 PORT                = int(os.environ.get("PORT", "3001"))
+
+_DATA_DIR   = pathlib.Path("/data")
+_TOKEN_FILE = _DATA_DIR / "token.txt"
+_ROOM_FILE  = _DATA_DIR / "room_id.txt"
 
 if not BOT_PASSWORD:
     print("[config] BOT_PASSWORD is required", file=sys.stderr)
@@ -62,6 +66,22 @@ def _matrix_request(method, path, body=None, token=None):
 
 def _login():
     global _access_token
+    # Reuse a persisted token to avoid login rate-limits on restart
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if _TOKEN_FILE.exists():
+        try:
+            saved = _TOKEN_FILE.read_text().strip()
+            if saved:
+                status, body = _matrix_request("GET", "/_matrix/client/v3/account/whoami", token=saved)
+                if status == 200:
+                    _access_token = saved
+                    print(f"[matrix] Reusing persisted token for @{BOT_USERNAME}:{MATRIX_DOMAIN}")
+                    return
+        except Exception:
+            pass
+        _TOKEN_FILE.unlink(missing_ok=True)
+        print("[matrix] Persisted token invalid — re-authenticating")
+
     status, body = _matrix_request("POST", "/_matrix/client/v3/login", {
         "type":       "m.login.password",
         "identifier": {"type": "m.id.user", "user": BOT_USERNAME},
@@ -73,37 +93,44 @@ def _login():
     if status != 200:
         raise RuntimeError(f"Login failed ({status}): {body}")
     _access_token = body["access_token"]
+    _TOKEN_FILE.write_text(_access_token)
     print(f"[matrix] Logged in as @{BOT_USERNAME}:{MATRIX_DOMAIN}")
 
 
 def _ensure_room():
     global _resolved_room
-    alias = f"#jitsi-notifications:{MATRIX_DOMAIN}"
 
-    if MATRIX_ROOM:
-        target = MATRIX_ROOM
-    else:
-        # Try to create; fall back to joining if it already exists
-        status, body = _matrix_request("POST", "/_matrix/client/v3/createRoom", {
-            "room_alias_name": "jitsi-notifications",
-            "name":            "Jitsi Notifications",
-            "topic":           "Automatic Jitsi meeting events",
-            "preset":          "public_chat",
-        }, _access_token)
-        if status == 200:
-            _resolved_room = body["room_id"]
-            print(f"[matrix] Created room {_resolved_room}  alias: {alias}")
-            print(f"[matrix] TIP: set MATRIX_ROOM={_resolved_room} to pin this room.")
+    # 1. Persisted room ID from previous run
+    if _ROOM_FILE.exists():
+        rid = _ROOM_FILE.read_text().strip()
+        if rid.startswith("!"):
+            _resolved_room = rid
+            print(f"[matrix] Using persisted room {_resolved_room}")
             return
-        # Room already exists — resolve alias
-        status, body = _matrix_request(
-            "GET",
-            f"/_matrix/client/v3/directory/room/{urllib.parse.quote(alias)}",
-            token=_access_token,
-        )
-        if status != 200:
-            raise RuntimeError(f"Cannot create or find {alias}: {body}")
-        target = body["room_id"]
+
+    # 2. Try to create room (public so the admin can easily join)
+    alias = f"#jitsi-notifications:{MATRIX_DOMAIN}"
+    status, body = _matrix_request("POST", "/_matrix/client/v3/createRoom", {
+        "room_alias_name": "jitsi-notifications",
+        "name":            "Jitsi Notifications",
+        "topic":           "Automatic Jitsi meeting events",
+        "preset":          "public_chat",
+    }, _access_token)
+    if status == 200:
+        _resolved_room = body["room_id"]
+        _ROOM_FILE.write_text(_resolved_room)
+        print(f"[matrix] Created room {_resolved_room}  alias: {alias}")
+        return
+
+    # 3. Room already exists — resolve alias
+    status, body = _matrix_request(
+        "GET",
+        f"/_matrix/client/v3/directory/room/{urllib.parse.quote(alias)}",
+        token=_access_token,
+    )
+    if status != 200:
+        raise RuntimeError(f"Cannot create or find {alias}: {body}")
+    target = body["room_id"]
 
     # Join (idempotent)
     status, body = _matrix_request(
@@ -113,6 +140,7 @@ def _ensure_room():
         _access_token,
     )
     _resolved_room = body.get("room_id", target)
+    _ROOM_FILE.write_text(_resolved_room)
     print(f"[matrix] Using room {_resolved_room}")
 
 

@@ -20,6 +20,18 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  BOT_USERNAME: jitsi-bot
+
+# Required GitHub Secrets (no bot-specific secrets needed):
+#   SSH_PRIVATE_KEY  — server SSH key
+#   TF_API_TOKEN     — Terraform Cloud token
+#   DOMAIN_NAME      — your domain (e.g. example.com)
+#   EMAIL_ADDRESS    — destination for post-deploy email
+#
+# Bot password and webhook secret are auto-generated on first deploy and
+# stored in /opt/services/bots/jitsi-bot/.credentials on the server.
+# The bot creates its own Matrix room on startup and persists the room ID
+# to /opt/services/bots/jitsi-bot/data/room_id.txt.
 
 jobs:
   get-server-ip:
@@ -71,22 +83,53 @@ jobs:
 
       - name: Validate required secrets
         env:
-          MATRIX_BOT_PASSWORD:   ${{ secrets.MATRIX_BOT_PASSWORD }}
-          MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
-          MATRIX_BOT_ROOM:       ${{ secrets.MATRIX_BOT_ROOM }}
-          DOMAIN_NAME:           ${{ secrets.DOMAIN_NAME }}
+          DOMAIN_NAME:   ${{ secrets.DOMAIN_NAME }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
         run: |
           MISSING=()
-          [[ -z "$MATRIX_BOT_PASSWORD" ]]   && MISSING+=("MATRIX_BOT_PASSWORD")
-          [[ -z "$MATRIX_WEBHOOK_SECRET" ]] && MISSING+=("MATRIX_WEBHOOK_SECRET")
-          [[ -z "$MATRIX_BOT_ROOM" ]]       && MISSING+=("MATRIX_BOT_ROOM")
-          [[ -z "$DOMAIN_NAME" ]]           && MISSING+=("DOMAIN_NAME")
+          [[ -z "$DOMAIN_NAME" ]]   && MISSING+=("DOMAIN_NAME")
+          [[ -z "$EMAIL_ADDRESS" ]] && MISSING+=("EMAIL_ADDRESS")
           if [[ ${#MISSING[@]} -gt 0 ]]; then
             echo "❌ Missing required GitHub Secrets: ${MISSING[*]}"
-            echo "   Add them at: Settings → Secrets and variables → Actions"
             exit 1
           fi
           echo "✅ All required secrets present"
+
+      - name: Create bot data directory on server
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "mkdir -p /opt/services/bots/jitsi-bot/data && chmod 700 /opt/services/bots/jitsi-bot/data"
+
+      - name: Generate or load bot credentials (idempotent)
+        id: creds
+        env:
+          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
+        run: |
+          CREDS_FILE=/opt/services/bots/jitsi-bot/.credentials
+          EXISTING=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "cat ${CREDS_FILE} 2>/dev/null || true")
+
+          if [[ -n "$EXISTING" ]]; then
+            echo "🔑 Loading existing credentials from server"
+            BOT_PASSWORD=$(echo "$EXISTING" | grep '^BOT_PASSWORD=' | cut -d= -f2-)
+            WEBHOOK_SECRET=$(echo "$EXISTING" | grep '^WEBHOOK_SECRET=' | cut -d= -f2-)
+          else
+            echo "🔑 Generating new credentials"
+            BOT_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/\n' | head -c 32)
+            WEBHOOK_SECRET=$(openssl rand -hex 32)
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} bash << SSHEOF
+          printf 'BOT_PASSWORD=%s\nWEBHOOK_SECRET=%s\n' "${BOT_PASSWORD}" "${WEBHOOK_SECRET}" \
+            > ${CREDS_FILE}
+          chmod 600 ${CREDS_FILE}
+          SSHEOF
+          fi
+
+          echo "::add-mask::${BOT_PASSWORD}"
+          echo "::add-mask::${WEBHOOK_SECRET}"
+          echo "bot_password=${BOT_PASSWORD}" >> $GITHUB_OUTPUT
+          echo "webhook_secret=${WEBHOOK_SECRET}" >> $GITHUB_OUTPUT
 
       - name: Sync bot files to server
         env:
@@ -95,6 +138,8 @@ jobs:
           echo "📦 Syncing jitsi-bot files to server..."
           rsync -avz --delete \
             --exclude='.git' \
+            --exclude='.credentials' \
+            --exclude='data/' \
             bots/jitsi-bot/ root@${SERVER_IP}:/opt/services/bots/jitsi-bot/
 
       - name: Copy Prosody plugin
@@ -106,18 +151,25 @@ jobs:
              cp /opt/services/bots/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
                 /opt/services/jitsi/prosody/prosody-plugins-custom/"
 
+      - name: Register Matrix bot user (idempotent)
+        env:
+          SERVER_IP:    ${{ needs.get-server-ip.outputs.server_ip }}
+          BOT_PASSWORD: ${{ steps.creds.outputs.bot_password }}
+        run: |
+          echo "Registering Matrix user: ${BOT_USERNAME}"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "docker exec matrix-synapse register_new_matrix_user \
+               -u ${BOT_USERNAME} -p '${BOT_PASSWORD}' \
+               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1 \
+             | grep -v 'User ID already taken' || true"
+
       - name: Write docker-compose override for jitsi-bot
         env:
-          SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
-          DOMAIN_NAME:           ${{ secrets.DOMAIN_NAME }}
-          MATRIX_BOT_USER:       ${{ secrets.MATRIX_BOT_USER }}
-          MATRIX_BOT_PASSWORD:   ${{ secrets.MATRIX_BOT_PASSWORD }}
-          MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
-          MATRIX_BOT_ROOM:       ${{ secrets.MATRIX_BOT_ROOM }}
+          SERVER_IP:      ${{ needs.get-server-ip.outputs.server_ip }}
+          DOMAIN_NAME:    ${{ secrets.DOMAIN_NAME }}
+          BOT_PASSWORD:   ${{ steps.creds.outputs.bot_password }}
+          WEBHOOK_SECRET: ${{ steps.creds.outputs.webhook_secret }}
         run: |
-          # Render the override file locally then copy it — avoids shell escaping
-          # issues with secrets in heredocs over SSH.
-          BOT_USER="${MATRIX_BOT_USER:-jitsi-bot}"
           cat > /tmp/docker-compose.jitsi-bot.yml << YAML
           services:
             jitsi-bot:
@@ -128,40 +180,24 @@ jobs:
               container_name: jitsi-bot
               restart: unless-stopped
               environment:
-                - BOT_USERNAME=${BOT_USER}
-                - BOT_PASSWORD=${MATRIX_BOT_PASSWORD}
+                - BOT_USERNAME=${BOT_USERNAME}
+                - BOT_PASSWORD=${BOT_PASSWORD}
                 - MATRIX_DOMAIN=${DOMAIN_NAME}
                 - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
                 - JITSI_PUBLIC_URL=https://meet.${DOMAIN_NAME}
-                - WEBHOOK_SECRET=${MATRIX_WEBHOOK_SECRET}
-                - MATRIX_ROOM=${MATRIX_BOT_ROOM}
+                - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+              volumes:
+                - /opt/services/bots/jitsi-bot/data:/data
               networks:
                 - services_network
           networks:
             services_network:
               external: true
           YAML
-          # Strip leading indentation (heredoc artifact)
           sed -i 's/^          //' /tmp/docker-compose.jitsi-bot.yml
-          echo "--- Rendered override ---"
-          cat /tmp/docker-compose.jitsi-bot.yml
           scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
             /tmp/docker-compose.jitsi-bot.yml \
             root@${SERVER_IP}:/opt/services/docker-compose.jitsi-bot.yml
-
-      - name: Register Matrix bot user (idempotent)
-        env:
-          SERVER_IP:           ${{ needs.get-server-ip.outputs.server_ip }}
-          MATRIX_BOT_USER:     ${{ secrets.MATRIX_BOT_USER }}
-          MATRIX_BOT_PASSWORD: ${{ secrets.MATRIX_BOT_PASSWORD }}
-        run: |
-          BOT_USER="${MATRIX_BOT_USER:-jitsi-bot}"
-          echo "Registering Matrix user: ${BOT_USER}"
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
-            "docker exec matrix-synapse register_new_matrix_user \
-               -u ${BOT_USER} -p '${MATRIX_BOT_PASSWORD}' \
-               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1 \
-             | grep -v 'User ID already taken' || true"
 
       - name: Build and start jitsi-bot container
         env:
@@ -185,100 +221,43 @@ jobs:
           SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
-            # Remove old flat path that existed before the bots/ refactor.
-            # Safe to run multiple times — does nothing if already gone.
             if [[ -d /opt/services/jitsi-bot ]]; then
               echo "🧹 Removing legacy /opt/services/jitsi-bot/ ..."
               rm -rf /opt/services/jitsi-bot
-              echo "✅ Legacy path removed"
-            else
-              echo "✅ Legacy path already gone"
             fi
           EOF
 
       - name: Ensure Prosody has webhook env vars and Lua plugin
         env:
-          SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
-          MATRIX_WEBHOOK_SECRET: ${{ secrets.MATRIX_WEBHOOK_SECRET }}
+          SERVER_IP:      ${{ needs.get-server-ip.outputs.server_ip }}
+          WEBHOOK_SECRET: ${{ steps.creds.outputs.webhook_secret }}
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << ENVSSH
             set -e
             COMPOSE=/opt/services/docker-compose.yml
 
-            # Idempotently add XMPP_MUC_MODULES to docker-compose.yml if missing
             if ! grep -q "XMPP_MUC_MODULES=matrix_webhook" "\$COMPOSE"; then
               echo "Adding webhook env vars to docker-compose.yml..."
-              sed -i "/- ENABLE_AUTH=1/a\\      - XMPP_MUC_MODULES=matrix_webhook\\n      - MATRIX_WEBHOOK_URL=http://jitsi-bot:3001/webhook\\n      - MATRIX_WEBHOOK_SECRET=${MATRIX_WEBHOOK_SECRET}" "\$COMPOSE"
+              sed -i "/- ENABLE_AUTH=1/a\\      - XMPP_MUC_MODULES=matrix_webhook\\n      - MATRIX_WEBHOOK_URL=http://jitsi-bot:3001/webhook\\n      - MATRIX_WEBHOOK_SECRET=${WEBHOOK_SECRET}" "\$COMPOSE"
             else
-              echo "Prosody env vars already present — updating secret value ✅"
-              # Always overwrite the secret value in case it was blank or changed
-              sed -i "s|MATRIX_WEBHOOK_SECRET=.*|MATRIX_WEBHOOK_SECRET=${MATRIX_WEBHOOK_SECRET}|g" "\$COMPOSE"
+              sed -i "s|MATRIX_WEBHOOK_SECRET=.*|MATRIX_WEBHOOK_SECRET=${WEBHOOK_SECRET}|g" "\$COMPOSE"
             fi
 
-            # Idempotently add PROSODY_TRUSTED_PROXIES so Prosody uses real client IPs
             if ! grep -q "PROSODY_TRUSTED_PROXIES" "\$COMPOSE"; then
-              echo "Adding PROSODY_TRUSTED_PROXIES..."
               sed -i "/MATRIX_WEBHOOK_SECRET/a\\      - PROSODY_TRUSTED_PROXIES=127.0.0.1,::1,172.16.0.0\/12,10.0.0.0\/8" "\$COMPOSE"
-            else
-              echo "PROSODY_TRUSTED_PROXIES already present ✅"
             fi
 
-            # Ensure plugin file is in place
             cp /opt/services/bots/jitsi-bot/prosody-plugin/mod_matrix_webhook.lua \
                /opt/services/jitsi/prosody/prosody-plugins-custom/
-
-            # Recreate jitsi-prosody to pick up env + plugin
-            cd /opt/services
-            docker compose up -d --force-recreate jitsi-prosody
+            cd /opt/services && docker compose up -d --force-recreate jitsi-prosody
             echo "✅ Prosody restarted with webhook module"
           ENVSSH
-
-      - name: Patch jitsi-web nginx to forward real client IPs
-        env:
-          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
-            if docker exec jitsi-web grep -q 'X-Forwarded-For \$remote_addr' /config/nginx/meet.conf 2>/dev/null; then
-              docker exec jitsi-web sed -i \
-                's/proxy_set_header X-Forwarded-For \$remote_addr/proxy_set_header X-Forwarded-For \$http_x_forwarded_for/g' \
-                /config/nginx/meet.conf
-              docker exec jitsi-web nginx -s reload
-              echo "✅ nginx patched and reloaded"
-            else
-              echo "✅ nginx already patched (or not running)"
-            fi
-          EOF
-
-      - name: Wait for bot to start
-        env:
-          SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
-        run: |
-          echo "⏳ Waiting for jitsi-bot to come up..."
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
-            for i in $(seq 1 20); do
-              if docker ps | grep -q "jitsi-bot.*Up"; then
-                echo "✅ jitsi-bot is running"
-                exit 0
-              fi
-              echo "Waiting... ($i/20)"
-              sleep 3
-            done
-            echo "❌ jitsi-bot did not start in time"
-            docker logs jitsi-bot --tail 50
-            exit 1
-          EOF
 
       - name: Health check
         env:
           SERVER_IP: ${{ needs.get-server-ip.outputs.server_ip }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} << 'EOF'
-            RESPONSE=$(curl -sf http://localhost:3001/health 2>&1) || true
-            echo "Health response: $RESPONSE"
-            if echo "$RESPONSE" | grep -q '"ok":true'; then
-              echo "✅ Bot health check passed"
-            else
-              echo "⚠️  Health check inconclusive — check logs:"
-              docker logs jitsi-bot --tail 30
-            fi
-          EOF
+          sleep 8
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            'STATUS=$(docker inspect --format "{{.State.Status}}" jitsi-bot 2>/dev/null); \
+             [[ "$STATUS" == "running" ]] && echo "✅ jitsi-bot is running" || (echo "❌ jitsi-bot status: $STATUS"; exit 1)'

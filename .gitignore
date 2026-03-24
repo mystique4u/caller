@@ -1,113 +1,60 @@
 # =====================================
 # WireGuard VPN Infrastructure
-
-# =====================================# =====================================
-
-
-
-# Terraform# Terraform
-
-*.tfvars*.tfvars
-
-!terraform.tfvars.example!terraform.tfvars.example
-
-.terraform/.terraform/
-
-.terraform.lock.hcl.terraform.lock.hcl
-
-terraform.tfstateterraform.tfstate
-
-terraform.tfstate.backupterraform.tfstate.backup
-
-*.tfstate*.tfstate
-
-*.tfstate.**.tfstate.*
-
-crash.logcrash.log
-
-crash.*.logcrash.*.log
-
-override.tfoverride.tf
-
-override.tf.jsonoverride.tf.json
-
-*_override.tf*_override.tf
-
-*_override.tf.json*_override.tf.json
-
-
-
-# Ansible# Ansible
-
-*.retry*.retry
-
-.ansible/.ansible/
-
-ansible_facts/ansible_facts/
-
-
-
-# SSH Keys & Secrets# SSH Keys & Secrets
-
-*.pem*.pem
-
-*.key*.key
-
-id_rsa*id_rsa*
-
-!*.pub!*.pub
-
-
-
-# Environment# Environment
-
-.env.env
-
-.env.local.env.local
-
-.env.*.local.env.*.local
-
-
-
-# IDE# IDE
-
-.vscode/.vscode/
-
-.idea/.idea/
-
-*.swp*.swp
-
-*.swo*.swo
-
-*~*~
-
-
-
-# OS# OS
-
-.DS_Store.DS_Store
-
-Thumbs.dbThumbs.db
-
-
-
-# Logs# Logs
-
-*.log*.log
-
-
-
-# Python (if any automation scripts)# Python (if any automation scripts)
-
-__pycache__/__pycache__/
-
-*.py[cod]*.py[cod]
-
-*$py.class*$py.class
-
-.Python.Python
-
-venv/venv/
-
-ENV/ENV/
-
+# =====================================
+
+# Terraform
+*.tfvars
+!terraform.tfvars.example
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ansible
+*.retry
+.ansible/
+ansible_facts/
+
+# SSH Keys & Secrets
+*.pem
+*.key
+id_rsa*
+!*.pub
+
+# Environment & credentials — NEVER commit these
+.env
+.env.local
+.env.*.local
+.credentials
+token.txt
+*.secret
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+ENV/
