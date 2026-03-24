@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/vpn-ip-indicator
     paths:
       - 'bots/security-bot/**'
       - 'ansible/tasks/bot-security.yml'
