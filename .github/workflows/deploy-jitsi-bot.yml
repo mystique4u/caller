@@ -168,7 +168,7 @@ jobs:
           RESULT=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "docker exec matrix-synapse register_new_matrix_user \
                -u ${BOT_USERNAME} -p '${BOT_PASSWORD}' \
-               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1")
+               --no-admin -c /data/homeserver.yaml http://localhost:8008 2>&1" || true)
           if echo "$RESULT" | grep -q 'User ID already taken'; then
             if [[ "${NEW_CREDS}" == "true" ]]; then
               echo "🔄 User exists but credentials were regenerated — updating DB password"
