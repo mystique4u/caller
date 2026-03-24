@@ -234,7 +234,7 @@ jobs:
             }
             echo "Starting security-bot container..."
             docker rm -f security-bot 2>/dev/null || true
-            docker compose -f docker-compose.security-bot.yml up -d security-bot
+            docker compose -p security-bot -f docker-compose.security-bot.yml up -d security-bot
             echo "✅ Container started"
           EOF
 

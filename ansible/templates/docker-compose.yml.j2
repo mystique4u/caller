@@ -241,6 +241,7 @@ services:
       - "traefik.http.routers.routemaker.tls.certresolver=letsencrypt"
       - "traefik.http.services.routemaker.loadbalancer.server.port=3000"
 
+{% if matrix_bot_password is defined and matrix_bot_password != '' %}
   jitsi-bot:
     build:
       context: /opt/services/bots/jitsi-bot
@@ -255,12 +256,13 @@ services:
       - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
       - JITSI_PUBLIC_URL=https://meet.{{ domain_name }}
       - WEBHOOK_SECRET={{ matrix_webhook_secret }}
-      - MATRIX_ROOM={{ matrix_bot_room | default('') }}
+      - MATRIX_ROOM_ID={{ matrix_bot_room_id | default('') }}
     networks:
       - services
     depends_on:
       - matrix-synapse
       - jitsi-prosody
+{% endif %}
 
 {% if security_bot_password is defined and security_bot_password != '' %}
   security-bot:
@@ -276,7 +278,7 @@ services:
       - MATRIX_DOMAIN={{ domain_name }}
       - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
       - WEBHOOK_SECRET={{ security_webhook_secret }}
-      - MATRIX_ROOM={{ security_bot_room | default('') }}
+      - MATRIX_ROOM_ID={{ security_bot_room_id | default('') }}
       - ADMIN_USER={{ matrix_admin_user | default('') and '@' + matrix_admin_user + ':' + domain_name }}
       - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
       - ALERT_ON_SUCCESS=true

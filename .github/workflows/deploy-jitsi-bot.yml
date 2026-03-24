@@ -228,7 +228,7 @@ jobs:
             }
             echo "Starting jitsi-bot container..."
             docker rm -f jitsi-bot 2>/dev/null || true
-            docker compose -f docker-compose.jitsi-bot.yml up -d jitsi-bot
+            docker compose -p jitsi-bot -f docker-compose.jitsi-bot.yml up -d jitsi-bot
             echo "✅ Container started"
           EOF
 
