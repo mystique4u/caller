@@ -265,6 +265,22 @@ def _is_telegram_url(url: str) -> bool:
     return bool(re.match(r'https?://t\.me/', url, re.I))
 
 
+class _YDLLogger:
+    """Forwards yt-dlp messages into Python logging and captures the last warning."""
+    def __init__(self):
+        self.last_warning = ""
+    def debug(self, msg: str) -> None:
+        if msg.startswith("[debug]"):
+            log.debug("yt-dlp: %s", msg)
+    def info(self, msg: str) -> None:
+        log.debug("yt-dlp: %s", msg)
+    def warning(self, msg: str) -> None:
+        log.warning("yt-dlp: %s", msg)
+        self.last_warning = msg
+    def error(self, msg: str) -> None:
+        log.error("yt-dlp: %s", msg)
+
+
 def _download(url: str) -> tuple[str, dict]:
     """
     Download URL via yt-dlp.
@@ -275,6 +291,7 @@ def _download(url: str) -> tuple[str, dict]:
     url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
     outtmpl = str(_MEDIA_DIR / f"{url_hash}.%(ext)s")
 
+    _logger = _YDLLogger()
     ydl_opts: dict = {
         "outtmpl": outtmpl,
         "format": "bestvideo+bestaudio/best",
@@ -284,6 +301,7 @@ def _download(url: str) -> tuple[str, dict]:
         "no_warnings": False,
         "noplaylist": True,
         "socket_timeout": 60,
+        "logger": _logger,
     }
 
     # YouTube: use iOS player client to bypass bot-detection on public videos.
@@ -334,7 +352,13 @@ def _download(url: str) -> tuple[str, dict]:
                 pass
 
     if info is None:
-        raise RuntimeError("yt-dlp returned no info")
+        warn = _logger.last_warning
+        if "returned nothing" in warn or "no video" in warn.lower():
+            raise RuntimeError(
+                "No downloadable media found in this post "
+                "(it may be photo-only or text-only)"
+            )
+        raise RuntimeError(f"yt-dlp returned no info{': ' + warn if warn else ''}")
 
     # Resolve the actual downloaded file path
     filepath = None
