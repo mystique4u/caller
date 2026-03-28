@@ -284,9 +284,14 @@ def _download(url: str) -> tuple[str, dict]:
         "no_warnings": False,
         "noplaylist": True,
         "socket_timeout": 60,
-        "js_runtimes": "node:/usr/bin/node",  # yt-dlp 2026+ requires a JS runtime for YouTube
-        "remote_components": "ejs:github",    # solve YouTube n-challenge (throttling bypass)
     }
+
+    # YouTube-only options: JS runtime + n-challenge solver
+    # These are invalid for other extractors (Telegram, TikTok, etc.)
+    _is_youtube = "youtube.com" in url or "youtu.be" in url
+    if _is_youtube:
+        ydl_opts["js_runtimes"] = "node:/usr/bin/node"
+        ydl_opts["remote_components"] = "ejs:github"
 
     # YouTube cookies — required to bypass bot-detection on Shorts/Reels.
     # We pass a TEMP COPY to yt-dlp so it cannot overwrite the original file
