@@ -286,7 +286,15 @@ def _download(url: str) -> tuple[str, dict]:
         "socket_timeout": 60,
     }
 
-    # YouTube cookies — required to bypass bot-detection on Shorts/Reels.
+    # YouTube: use iOS player client to bypass bot-detection on public videos.
+    # The iOS client is authenticated differently by YouTube and avoids the
+    # "Sign in to confirm you're not a bot" challenge for public content.
+    # Cookies are still passed as a fallback for private/age-restricted videos.
+    _is_youtube = "youtube.com" in url or "youtu.be" in url
+    if _is_youtube:
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["ios", "web"]}}
+
+    # YouTube cookies — passed as fallback for age-restricted / private content.
     # We pass a TEMP COPY to yt-dlp so it cannot overwrite the original file
     # (yt-dlp rewrites the cookiefile on every run, stripping auth cookies).
     cookies_path = Path(YOUTUBE_COOKIES_FILE)
