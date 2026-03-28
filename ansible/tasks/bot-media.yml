@@ -1,0 +1,25 @@
+---
+# Media Bot Setup Tasks
+
+- name: Copy media-bot application files
+  synchronize:
+    src: "{{ playbook_dir }}/../bots/media-bot/"
+    dest: /opt/services/bots/media-bot/
+    delete: yes
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.git"
+      - "--exclude=.credentials"
+      - "--exclude=data"
+
+- name: Create media-bot data directory
+  file:
+    path: /opt/services/bots/media-bot/data
+    state: directory
+    mode: '0700'
+
+- name: Create media-bot media download subdirectory
+  file:
+    path: /opt/services/bots/media-bot/data/media
+    state: directory
+    mode: '0700'

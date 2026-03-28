@@ -1,0 +1,47 @@
+# Dynamic configuration: Matrix media performance
+# Deployed by ansible/tasks/traefik.yml
+# Watched automatically by Traefik's file provider (providers.file.directory)
+
+http:
+  middlewares:
+    # B1 — Gzip compression for all Matrix API responses
+    matrix-compress:
+      compress: {}
+
+    # B2 — Immutable cache headers for media downloads
+    # Element/browser will cache images and videos locally after the first load
+    # and never re-request the same file again (mxc:// URLs are content-addressed)
+    matrix-media-cache:
+      headers:
+        customResponseHeaders:
+          Cache-Control: "public, max-age=31536000, immutable"
+
+  routers:
+    # High-priority router for /_matrix/media/* — applies cache headers
+    matrix-media:
+      rule: "Host(`matrix.{{ domain_name }}`) && PathPrefix(`/_matrix/media/`)"
+      entryPoints:
+        - websecure
+      middlewares:
+        - matrix-compress
+        - matrix-media-cache
+      service: matrix-synapse-svc
+      tls:
+        certResolver: letsencrypt
+      priority: 200
+
+    # Federation endpoint — compress only
+    matrix-federation-compress:
+      rule: "Host(`matrix.{{ domain_name }}`)"
+      entryPoints:
+        - federation
+      middlewares:
+        - matrix-compress
+      service: matrix-synapse-svc
+      priority: 10
+
+  services:
+    matrix-synapse-svc:
+      loadBalancer:
+        servers:
+          - url: "http://matrix-synapse:8008"

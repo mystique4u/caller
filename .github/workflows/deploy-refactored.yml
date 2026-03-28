@@ -9,6 +9,7 @@ on:
       - 'ansible/**'
       - '!ansible/tasks/bot-jitsi.yml'
       - '!ansible/tasks/bot-security.yml'
+      - '!ansible/tasks/bot-media.yml'
   workflow_dispatch:
     inputs:
       action:

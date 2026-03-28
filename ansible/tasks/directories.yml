@@ -28,6 +28,11 @@
     - /opt/services/bots/jitsi-bot
     - /opt/services/bots/security-bot
     - /opt/services/bots/security-bot/data
+    - /opt/services/bots/media-bot
+    - /opt/services/bots/media-bot/data
+    - /opt/services/bots/media-bot/data/media
+    - /opt/backup
+    - /opt/backup/db
 
 - name: Create backup script directory
   file:

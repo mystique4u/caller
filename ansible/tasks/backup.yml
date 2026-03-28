@@ -1,109 +1,309 @@
 ---
 # Backup Configuration Tasks
-- name: Create backup script
+#
+# Uses rsync over SSH (port 23) to keep StorageBox in sync with the current
+# server state. No snapshots — StorageBox always reflects exactly what is on
+# the server right now. Only changed files are transferred on each run.
+#
+# StorageBox structure:
+#   /home/backups/hosts/caller/state/
+#     db/               ← pg_dump output (always current)
+#     traefik/          ← /opt/services/traefik/
+#     matrix-synapse/   ← /opt/services/matrix/synapse/
+#     jitsi/            ← /opt/services/jitsi/
+#     wireguard/        ← /etc/wireguard/
+#     wireguard-ui/     ← /opt/services/wireguard-ui/
+#     routemaker-data/  ← /opt/services/routemaker/data/
+#     mailserver/       ← /opt/services/mailserver/
+#     bots/             ← /opt/services/bots/ (includes .credentials + sessions)
+
+- name: Create backup directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0700'
+  loop:
+    - /opt/backup
+    - /opt/backup/db
+
+- name: Deploy state-sync script
   copy:
     content: |
       #!/bin/bash
-      set -e
-      
-      # Configuration
-      STORAGEBOX_HOST="{{ lookup('env', 'STORAGEBOX_HOST') }}"
-      STORAGEBOX_USER="{{ lookup('env', 'STORAGEBOX_USER') }}"
-      STORAGEBOX_PASSWORD="{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
-      STORAGEBOX_PORT="23"
-      REMOTE_BASE="/home/backups/hosts/caller"
-      BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
-      LOCAL_BACKUP_DIR="/tmp/backup-${BACKUP_DATE}"
-      
-      echo "=== Starting backup at $(date) ==="
-      mkdir -p "${LOCAL_BACKUP_DIR}"
-      
-      echo "📦 Backing up PostgreSQL database..."
-      docker exec matrix-postgres pg_dump -U synapse synapse | gzip > "${LOCAL_BACKUP_DIR}/matrix-postgres-${BACKUP_DATE}.sql.gz"
-      
-      echo "📦 Backing up Matrix Synapse data..."
-      tar -czf "${LOCAL_BACKUP_DIR}/matrix-data-${BACKUP_DATE}.tar.gz" -C /opt/services/matrix .
-      
-      echo "📦 Backing up Jitsi configs..."
-      tar -czf "${LOCAL_BACKUP_DIR}/jitsi-${BACKUP_DATE}.tar.gz" -C /opt/services/jitsi .
-      
-      echo "📦 Backing up WireGuard configs..."
-      tar -czf "${LOCAL_BACKUP_DIR}/wireguard-${BACKUP_DATE}.tar.gz" -C /etc wireguard
-      
-      echo "📦 Backing up WireGuard UI database..."
-      tar -czf "${LOCAL_BACKUP_DIR}/wireguard-ui-${BACKUP_DATE}.tar.gz" -C /opt/services/wireguard-ui .
-      
-      echo "📦 Backing up Traefik SSL certificates..."
-      tar -czf "${LOCAL_BACKUP_DIR}/traefik-${BACKUP_DATE}.tar.gz" -C /opt/services/traefik .
-      
-      echo "� Backing up RouteMaker database..."
-      tar -czf "${LOCAL_BACKUP_DIR}/routemaker-${BACKUP_DATE}.tar.gz" -C /opt/services/routemaker/data .
-            echo "📧 Backing up mail server data..."
-      tar -czf "${LOCAL_BACKUP_DIR}/mailserver-${BACKUP_DATE}.tar.gz" -C /opt/services/mailserver .
-            echo "�📝 Creating backup manifest..."
-      cat > "${LOCAL_BACKUP_DIR}/MANIFEST.txt" << EOF
-      ==========================================
-      BACKUP MANIFEST
-      ==========================================
-      Backup Date: $(date)
-      Hostname: $(hostname)
-      IP Address: $(hostname -I | awk '{print $1}')
-      
-      Total backup size: $(du -sh ${LOCAL_BACKUP_DIR} | awk '{print $1}')
-      ==========================================
-      EOF
-      
-      echo "☁️  Uploading to Storage Box..."
-      lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_COMMANDS
-      set sftp:auto-confirm yes
-      set ssl:verify-certificate no
-      mkdir -p ${REMOTE_BASE}
-      cd ${REMOTE_BASE}
-      lcd ${LOCAL_BACKUP_DIR}
-      mput *.gz
-      put MANIFEST.txt
-      bye
-      LFTP_COMMANDS
-      
-      echo "🧹 Cleaning up old backups (keeping last 7)..."
-      lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_CLEANUP
-      set sftp:auto-confirm yes
-      set ssl:verify-certificate no
-      cd ${REMOTE_BASE}
-      cls -1 --sort=date | head -n -7 | xargs -r rm
-      bye
-      LFTP_CLEANUP
-      
-      echo "🗑️  Cleaning up local temporary files..."
-      rm -rf "${LOCAL_BACKUP_DIR}"
-      
-      echo "✅ Backup completed successfully!"
-    dest: /opt/backup/backup.sh
+      set -euo pipefail
+
+      # state-sync.sh — mirrors /opt/services persistent state to Hetzner StorageBox
+      # via rsync over SSH (port 23). StorageBox always matches current server state.
+      # No timestamps, no rotation, no wasted space. Only changed files transferred.
+      #
+      # Environment variables required (set via cron env or exported before running):
+      #   STORAGEBOX_HOST, STORAGEBOX_USER, STORAGEBOX_PASSWORD
+      #   Optionally: STORAGEBOX_PORT (default: 23)
+      #   Optionally: ADMIN_EMAIL  — if set, an email report is sent after sync
+      #               DOMAIN_NAME  — used in the email subject/from address
+
+      SB_HOST="${STORAGEBOX_HOST}"
+      SB_USER="${STORAGEBOX_USER}"
+      SB_PASS="${STORAGEBOX_PASSWORD}"
+      SB_PORT="${STORAGEBOX_PORT:-23}"
+      REMOTE_STATE="/home/backups/hosts/caller/state"
+
+      rsync_up() {
+          local src="$1" dest="$2"
+          shift 2
+          sshpass -p "${SB_PASS}" rsync -az --delete \
+              -e "ssh -p ${SB_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+              "$@" \
+              "${src}/" \
+              "${SB_USER}@${SB_HOST}:${REMOTE_STATE}/${dest}/"
+      }
+
+      START_TIME=$(date)
+      echo "=== State sync started at ${START_TIME} ==="
+
+      echo "🗄️  PostgreSQL — dumping..."
+      mkdir -p /opt/backup/db
+      docker exec matrix-postgres pg_dump -U synapse synapse > /opt/backup/db/synapse.sql
+      echo "🗄️  PostgreSQL — syncing dump..."
+      rsync_up /opt/backup/db db
+
+      echo "🔒 Traefik (SSL certs + dynamic config)..."
+      rsync_up /opt/services/traefik traefik
+
+      echo "💬 Matrix Synapse data (config, media store, signing key)..."
+      rsync_up /opt/services/matrix/synapse matrix-synapse
+
+      echo "📹 Jitsi config..."
+      rsync_up /opt/services/jitsi jitsi
+
+      echo "🔐 WireGuard kernel config..."
+      rsync_up /etc/wireguard wireguard
+
+      echo "🔐 WireGuard UI database..."
+      rsync_up /opt/services/wireguard-ui wireguard-ui
+
+      echo "🗺️  RouteMaker data..."
+      rsync_up /opt/services/routemaker/data routemaker-data
+
+      echo "📧 Mail server (accounts, DKIM keys, config)..."
+      rsync_up /opt/services/mailserver mailserver
+
+      echo "🤖 Bots (credentials, tokens, sessions — excluding in-progress downloads)..."
+      rsync_up /opt/services/bots bots --exclude='media-bot/data/media/'
+
+      END_TIME=$(date)
+      echo "=== State sync complete at ${END_TIME} ==="
+
+      # ── Post-sync email report ─────────────────────────────────────────────
+      if [[ -z "${ADMIN_EMAIL:-}" ]]; then
+          echo "ADMIN_EMAIL not set — skipping email report"
+          exit 0
+      fi
+
+      DOMAIN="${DOMAIN_NAME:-$(hostname -f)}"
+
+      # Quota via sftp (Hetzner StorageBox reports quota in df output)
+      QUOTA_INFO=$(sshpass -p "${SB_PASS}" ssh \
+          -p "${SB_PORT}" \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          "${SB_USER}@${SB_HOST}" \
+          "df -h /home 2>/dev/null || echo 'quota unavailable'" 2>/dev/null || echo "quota unavailable")
+
+      # Parse used/total/percent from df output (second line)
+      USED=$(echo "${QUOTA_INFO}"   | awk 'NR==2 {print $3}')
+      TOTAL=$(echo "${QUOTA_INFO}"  | awk 'NR==2 {print $2}')
+      AVAIL=$(echo "${QUOTA_INFO}"  | awk 'NR==2 {print $4}')
+      PCT=$(echo "${QUOTA_INFO}"    | awk 'NR==2 {print $5}' | tr -d '%')
+
+      # Per-directory sizes on StorageBox
+      DIR_SIZES=$(sshpass -p "${SB_PASS}" ssh \
+          -p "${SB_PORT}" \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          "${SB_USER}@${SB_HOST}" \
+          "du -sh ${REMOTE_STATE}/* 2>/dev/null" 2>/dev/null || echo "unavailable")
+
+      # Warn if quota > 95%
+      if [[ "${PCT}" =~ ^[0-9]+$ ]] && (( PCT >= 95 )); then
+          WARN_LINE="⚠️  WARNING: StorageBox is ${PCT}% full — only ${AVAIL} remaining!"
+          SUBJECT="⚠️ BACKUP REPORT [DISK ALMOST FULL] — ${DOMAIN}"
+      else
+          WARN_LINE="Storage usage is normal (${PCT:-?}% used)."
+          SUBJECT="✅ Backup Report — ${DOMAIN}"
+      fi
+
+      BODY_FILE=$(mktemp)
+      cat > "${BODY_FILE}" << BODY
+      StorageBox Backup Report — ${DOMAIN}
+      ──────────────────────────────────────────────────────
+      Started : ${START_TIME}
+      Finished: ${END_TIME}
+
+      ── STORAGE QUOTA ─────────────────────────────────────
+      Used  : ${USED:-?} / ${TOTAL:-?}  (${PCT:-?}%)
+      Free  : ${AVAIL:-?}
+
+      ${WARN_LINE}
+
+      ── PER-DIRECTORY SIZES ───────────────────────────────
+      ${DIR_SIZES}
+
+      ── BACKED UP ─────────────────────────────────────────
+        db/              PostgreSQL dump
+        traefik/         SSL certificates + dynamic config
+        matrix-synapse/  Synapse data, media store, signing key
+        jitsi/           Jitsi configuration
+        wireguard/       WireGuard kernel configuration
+        wireguard-ui/    WireGuard UI database
+        routemaker-data/ RouteMaker waypoints and data
+        mailserver/      Mail accounts, DKIM keys, configuration
+        bots/            Bot credentials, Telegram sessions, state
+      ──────────────────────────────────────────────────────
+      BODY
+      sed -i 's/^      //' "${BODY_FILE}"
+
+      python3 /opt/services/mailserver/send-email.py \
+          "${ADMIN_EMAIL}" \
+          "${SUBJECT}" \
+          "${BODY_FILE}" && echo "✅ Backup report sent to ${ADMIN_EMAIL}"
+
+      rm -f "${BODY_FILE}"
+    dest: /opt/backup/state-sync.sh
     mode: '0700'
 
-- name: Create backup cron job (daily at 2 AM)
+- name: Deploy state-restore script
+  copy:
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      # state-restore.sh — restores persistent state from Hetzner StorageBox.
+      # Reverse of state-sync.sh. Run on a fresh server after Ansible deploy
+      # to recover all persistent data.
+      #
+      # Usage:
+      #   STORAGEBOX_HOST=... STORAGEBOX_USER=... STORAGEBOX_PASSWORD=... \
+      #     /opt/backup/state-restore.sh
+
+      SB_HOST="${STORAGEBOX_HOST}"
+      SB_USER="${STORAGEBOX_USER}"
+      SB_PASS="${STORAGEBOX_PASSWORD}"
+      SB_PORT="${STORAGEBOX_PORT:-23}"
+      REMOTE_STATE="/home/backups/hosts/caller/state"
+
+      rsync_down() {
+          local src="$1" dst="$2"
+          mkdir -p "$dst"
+          sshpass -p "${SB_PASS}" rsync -az --delete \
+              -e "ssh -p ${SB_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+              "${SB_USER}@${SB_HOST}:${REMOTE_STATE}/${src}/" \
+              "${dst}/"
+      }
+
+      echo "=== State restore started at $(date) ==="
+
+      echo "⏸️  Stopping all services..."
+      cd /opt/services && docker compose down 2>/dev/null || true
+
+      echo "🔒 Restoring Traefik..."
+      rsync_down traefik /opt/services/traefik
+      chmod 600 /opt/services/traefik/acme/acme.json 2>/dev/null || true
+
+      echo "💬 Restoring Matrix Synapse data..."
+      rsync_down matrix-synapse /opt/services/matrix/synapse
+
+      echo "📹 Restoring Jitsi config..."
+      rsync_down jitsi /opt/services/jitsi
+
+      echo "🔐 Restoring WireGuard..."
+      rsync_down wireguard /etc/wireguard
+      chmod 600 /etc/wireguard/*.conf 2>/dev/null || true
+      rsync_down wireguard-ui /opt/services/wireguard-ui
+
+      echo "🗺️  Restoring RouteMaker data..."
+      rsync_down routemaker-data /opt/services/routemaker/data
+
+      echo "📧 Restoring mail server..."
+      rsync_down mailserver /opt/services/mailserver
+
+      echo "🤖 Restoring bots (credentials + state)..."
+      rsync_down bots /opt/services/bots
+      find /opt/services/bots -name '.credentials' -exec chmod 600 {} \;
+
+      echo "🗄️  Restoring PostgreSQL..."
+      rsync_down db /opt/backup/db
+      if [ -f /opt/backup/db/synapse.sql ]; then
+          cd /opt/services && docker compose up -d matrix-postgres
+          echo "⏳ Waiting for PostgreSQL to be ready..."
+          for i in $(seq 1 30); do
+              docker exec matrix-postgres pg_isready -U synapse > /dev/null 2>&1 && break
+              sleep 2
+          done
+          echo "  Dropping existing schema and restoring from dump..."
+          docker exec matrix-postgres psql -U synapse -c \
+              "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
+          docker exec -i matrix-postgres psql -U synapse synapse < /opt/backup/db/synapse.sql
+          echo "✅ Database restored"
+      else
+          echo "⚠️  No database dump found at /opt/backup/db/synapse.sql"
+      fi
+
+      echo "🔄 Starting all services..."
+      cd /opt/services && docker compose up -d
+
+      echo "⏳ Waiting 15s for services to initialise..."
+      sleep 15
+
+      echo "📊 Service status:"
+      docker compose -f /opt/services/docker-compose.yml ps
+
+      echo "=== State restore complete at $(date) ==="
+    dest: /opt/backup/state-restore.sh
+    mode: '0700'
+
+- name: Set StorageBox credentials in cron environment
   cron:
-    name: "Daily backup to Storage Box"
+    name: "{{ item.name }}"
+    env: yes
+    value: "{{ item.value }}"
+    user: root
+  loop:
+    - name: STORAGEBOX_HOST
+      value: "{{ lookup('env', 'STORAGEBOX_HOST') }}"
+    - name: STORAGEBOX_USER
+      value: "{{ lookup('env', 'STORAGEBOX_USER') }}"
+    - name: STORAGEBOX_PASSWORD
+      value: "{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
+    - name: ADMIN_EMAIL
+      value: "{{ email_address }}"
+    - name: DOMAIN_NAME
+      value: "{{ domain_name }}"
+
+- name: Create daily state-sync cron job (2 AM)
+  cron:
+    name: "Daily state sync to StorageBox"
     minute: "0"
     hour: "2"
-    job: "/opt/backup/backup.sh >> /var/log/backup.log 2>&1"
+    job: "/opt/backup/state-sync.sh >> /var/log/backup.log 2>&1"
     user: root
 
-- name: Run initial backup test
-  shell: /opt/backup/backup.sh
+- name: Run initial state sync
+  shell: /opt/backup/state-sync.sh
   environment:
-    STORAGEBOX_HOST: "{{ lookup('env', 'STORAGEBOX_HOST') }}"
-    STORAGEBOX_USER: "{{ lookup('env', 'STORAGEBOX_USER') }}"
+    STORAGEBOX_HOST:     "{{ lookup('env', 'STORAGEBOX_HOST') }}"
+    STORAGEBOX_USER:     "{{ lookup('env', 'STORAGEBOX_USER') }}"
     STORAGEBOX_PASSWORD: "{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
-  register: backup_result
+  register: sync_result
   ignore_errors: yes
 
-- name: Display backup results
+- name: Display sync result
   debug:
-    msg: "{{ backup_result.stdout_lines | default(['Backup completed']) }}"
-  when: backup_result is defined
+    msg: "{{ sync_result.stdout_lines | default(['Sync completed']) }}"
+  when: sync_result is defined
 
-- name: Display backup errors if any
+- name: Display sync errors if any
   debug:
-    msg: "{{ backup_result.stderr_lines | default(['No errors']) }}"
-  when: backup_result is defined and backup_result.failed
+    msg: "{{ sync_result.stderr_lines | default(['No errors']) }}"
+  when: sync_result is defined and sync_result.failed
+

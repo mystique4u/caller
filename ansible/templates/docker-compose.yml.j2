@@ -302,6 +302,31 @@ services:
       - matrix-synapse
 {% endif %}
 
+{% if media_bot_password is defined and media_bot_password != '' %}
+  media-bot:
+    build:
+      context: /opt/services/bots/media-bot
+      dockerfile: Dockerfile
+    image: media-bot:latest
+    container_name: media-bot
+    restart: unless-stopped
+    environment:
+      - BOT_USERNAME=media-bot
+      - BOT_PASSWORD={{ media_bot_password }}
+      - MATRIX_DOMAIN={{ domain_name }}
+      - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
+      - MAX_FILE_SIZE_MB=250
+      - TELEGRAM_API_ID={{ telegram_api_id | default('') }}
+      - TELEGRAM_API_HASH={{ telegram_api_hash | default('') }}
+      - PORT=3003
+    volumes:
+      - /opt/services/bots/media-bot/data:/data
+    networks:
+      - services
+    depends_on:
+      - matrix-synapse
+{% endif %}
+
   mailserver:
     image: docker.io/mailserver/docker-mailserver:latest
     container_name: mailserver
