@@ -286,12 +286,6 @@ def _download(url: str) -> tuple[str, dict]:
         "socket_timeout": 60,
     }
 
-    # YouTube-only options: JS runtime + n-challenge solver
-    # These are invalid for other extractors (Telegram, TikTok, etc.)
-    _is_youtube = "youtube.com" in url or "youtu.be" in url
-    if _is_youtube:
-        ydl_opts["remote_components"] = "ejs:github"
-
     # YouTube cookies — required to bypass bot-detection on Shorts/Reels.
     # We pass a TEMP COPY to yt-dlp so it cannot overwrite the original file
     # (yt-dlp rewrites the cookiefile on every run, stripping auth cookies).
