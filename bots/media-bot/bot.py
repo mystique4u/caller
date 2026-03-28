@@ -275,7 +275,7 @@ def _download(url: str) -> tuple[str, dict]:
 
     ydl_opts: dict = {
         "outtmpl": outtmpl,
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+        "format": "bestvideo+bestaudio/best",
         "merge_output_format": "mp4",
         "max_filesize": MAX_FILE_SIZE_MB * 1024 * 1024,
         "quiet": True,
