@@ -184,9 +184,11 @@ jobs:
           TELEGRAM_API_ID:  ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           COBALT_API_URL:   ${{ secrets.COBALT_API_URL }}
+          COBALT_API_KEY:   ${{ secrets.COBALT_API_KEY }}
         run: |
-          # COBALT_API_URL defaults to public API if not set as a GitHub Secret.
-          # Set it only if you self-host a cobalt instance.
+          # COBALT_API_URL defaults to public api.cobalt.tools if not set.
+          # Set COBALT_API_URL + leave COBALT_API_KEY empty when self-hosting.
+          # Set COBALT_API_KEY when using the managed api.cobalt.tools instance.
           COBALT_URL=${COBALT_API_URL:-https://api.cobalt.tools}
           cat > /tmp/docker-compose.media-bot.yml << YAML
           services:
@@ -204,6 +206,7 @@ jobs:
                 - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
                 - MAX_FILE_SIZE_MB=250
                 - COBALT_API_URL=${COBALT_URL}
+                - COBALT_API_KEY=${COBALT_API_KEY}
                 - TELEGRAM_API_ID=${TELEGRAM_API_ID}
                 - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
                 - PORT=3003

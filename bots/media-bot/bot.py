@@ -35,6 +35,9 @@ Optional environment variables:
   MATRIX_ROOM_ID        Restrict processing to one room ID
   MAX_FILE_SIZE_MB      Maximum download size in MB; default: 250
   COBALT_API_URL        cobalt API base URL; default: https://api.cobalt.tools
+                        Point to a self-hosted instance to avoid needing an API key.
+  COBALT_API_KEY        cobalt API key (Api-Key token); required for api.cobalt.tools
+                        as of early 2026. Not needed when self-hosting cobalt.
   TELEGRAM_API_ID       Telegram app api_id (for t.me link downloads)
   TELEGRAM_API_HASH     Telegram app api_hash (for t.me link downloads)
   PORT                  Health endpoint port; default: 3003
@@ -66,6 +69,7 @@ MATRIX_DOMAIN       = os.environ.get("MATRIX_DOMAIN", "")
 MATRIX_ROOM_ID      = os.environ.get("MATRIX_ROOM_ID", "")
 MAX_FILE_SIZE_MB    = int(os.environ.get("MAX_FILE_SIZE_MB", "250"))
 COBALT_API_URL      = os.environ.get("COBALT_API_URL", "https://api.cobalt.tools").rstrip("/")
+COBALT_API_KEY      = os.environ.get("COBALT_API_KEY", "")
 TELEGRAM_API_ID     = os.environ.get("TELEGRAM_API_ID", "")
 TELEGRAM_API_HASH   = os.environ.get("TELEGRAM_API_HASH", "")
 PORT                = int(os.environ.get("PORT", "3003"))
@@ -288,24 +292,34 @@ def _cobalt_download(url: str) -> tuple[str, str]:
     url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
 
     log.info("cobalt: requesting %s", url)
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    if COBALT_API_KEY:
+        headers["Authorization"] = f"Api-Key {COBALT_API_KEY}"
     try:
         resp = requests.post(
             f"{COBALT_API_URL}/",
-            json={"url": url, "videoQuality": "1080", "downloadMode": "auto", "filenameStyle": "basic"},
-            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            json={"url": url, "videoQuality": "max", "downloadMode": "auto"},
+            headers=headers,
             timeout=30,
         )
-        resp.raise_for_status()
-        data = resp.json()
     except requests.RequestException as exc:
         raise RuntimeError(f"cobalt API request failed: {exc}") from exc
 
-    status = data.get("status")
-    log.info("cobalt: status=%s", status)
+    # Always parse the JSON body first — cobalt returns error details even on
+    # non-200 HTTP status codes (e.g. 400 with {"status":"error","error":{...}})
+    try:
+        data = resp.json()
+    except Exception:
+        resp.raise_for_status()
+        raise RuntimeError("cobalt API returned non-JSON response")
 
-    if status == "error":
+    status = data.get("status")
+    log.info("cobalt: status=%s (HTTP %d)", status, resp.status_code)
+
+    if status == "error" or not resp.ok:
         err = data.get("error", {})
-        raise RuntimeError(f"cobalt error: {err.get('code', 'unknown')}")
+        code = err.get("code", "unknown") if isinstance(err, dict) else str(err)
+        raise RuntimeError(f"cobalt error: {code}")
 
     if status in ("tunnel", "redirect"):
         media_url = data["url"]
