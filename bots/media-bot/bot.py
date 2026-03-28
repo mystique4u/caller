@@ -39,7 +39,9 @@ import logging
 import mimetypes
 import os
 import re
+import shutil
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -282,13 +284,20 @@ def _download(url: str) -> tuple[str, dict]:
         "no_warnings": False,
         "noplaylist": True,
         "socket_timeout": 60,
+        "js_runtimes": "node",  # yt-dlp 2026+ requires a JS runtime for YouTube
     }
 
-    # YouTube cookies — required to bypass bot-detection on Shorts/Reels
+    # YouTube cookies — required to bypass bot-detection on Shorts/Reels.
+    # We pass a TEMP COPY to yt-dlp so it cannot overwrite the original file
+    # (yt-dlp rewrites the cookiefile on every run, stripping auth cookies).
     cookies_path = Path(YOUTUBE_COOKIES_FILE)
+    _tmp_cookies = None
     if cookies_path.exists():
-        ydl_opts["cookiefile"] = str(cookies_path)
-        log.debug("Using cookies from %s", cookies_path)
+        _tmp_cookies = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
+        shutil.copy2(str(cookies_path), _tmp_cookies.name)
+        _tmp_cookies.close()
+        ydl_opts["cookiefile"] = _tmp_cookies.name
+        log.debug("Using cookies (temp copy) from %s", cookies_path)
 
     # Telegram credentials for t.me link downloads
     if _is_telegram_url(url):
@@ -311,6 +320,11 @@ def _download(url: str) -> tuple[str, dict]:
             info = ydl.extract_info(url, download=True)
     finally:
         os.chdir(original_cwd)
+        if _tmp_cookies:
+            try:
+                os.unlink(_tmp_cookies.name)
+            except Exception:
+                pass
 
     if info is None:
         raise RuntimeError("yt-dlp returned no info")

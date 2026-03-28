@@ -3,7 +3,8 @@ FROM python:3.12-alpine
 WORKDIR /app
 
 # ffmpeg is required by yt-dlp to merge separate video and audio streams
-RUN apk add --no-cache ffmpeg gcc musl-dev libffi-dev
+# nodejs is required by yt-dlp 2026+ to decrypt YouTube format URLs (JS runtime)
+RUN apk add --no-cache ffmpeg gcc musl-dev libffi-dev nodejs
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
