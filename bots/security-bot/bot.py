@@ -295,11 +295,11 @@ def send(plain: str, html: str = "") -> None:
 def fmt(icon: str, title: str, fields: dict, suppressed: int = 0, tag: str = "") -> tuple[str, str]:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     tag_prefix = f"[{tag}] " if tag else ""
-    note = f" <i>(+{suppressed} more in window)</i>" if suppressed else ""
-    rows = "".join(f"<tr><td><b>{k}</b></td><td>{v}</td></tr>" for k, v in fields.items())
-    html = f"<p>{icon} <b>{tag_prefix}{title}</b> — <i>{ts}{note}</i></p><table>{rows}</table>"
-    suffix = f"\n  (+{suppressed} more in rate-limit window)" if suppressed else ""
-    plain = f"{icon} {tag_prefix}{title} ({ts})\n" + "\n".join(f"  {k}: {v}" for k, v in fields.items()) + suffix
+    note = f" (+{suppressed} more in window)" if suppressed else ""
+    field_lines = "\n".join(f"  {k}: {v}" for k, v in fields.items())
+    plain = f"{icon} {tag_prefix}{title} — {ts}{note}\n{field_lines}"
+    html_fields = "<br>".join(f"<b>{k}:</b> {v}" for k, v in fields.items())
+    html = f"{icon} <b>{tag_prefix}{title}</b> — {ts}{note}<br>{html_fields}"
     return plain, html
 
 # ── Log file monitor base ──────────────────────────────────────────────────────
