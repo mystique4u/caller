@@ -382,10 +382,11 @@ def _download(url: str) -> tuple[str, dict]:
 
 # ── Core handler ──────────────────────────────────────────────────────────────
 
-def _fetch_telegram_fallback(url: str) -> tuple[str | None, str | None]:
+def _fetch_telegram_fallback(url: str) -> tuple[list[str], str | None]:
     """
-    For Telegram posts with no video, scrape the t.me embed page for
-    text and a preview image.  Returns (image_url_or_None, text_or_None).
+    For Telegram posts with no video, scrape the t.me embed widget page for
+    the post text and CDN image URLs.
+    Returns (list_of_image_urls, text_or_None).
     """
     try:
         embed_url = re.sub(r'\?.*$', '', url.rstrip('/')) + '?embed=1&mode=tme'
@@ -394,16 +395,35 @@ def _fetch_telegram_fallback(url: str) -> tuple[str | None, str | None]:
         page = resp.text
     except Exception as exc:
         log.debug("Telegram fallback fetch failed: %s", exc)
-        return None, None
+        return [], None
 
-    img_m = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']', page)
-    image_url = img_m.group(1) if img_m else None
+    # Post text lives in tgme_widget_message_text div — strip inner tags
+    txt_m = re.search(
+        r'class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+        page, re.S | re.I,
+    )
+    text = None
+    if txt_m:
+        raw = txt_m.group(1)
+        # <br/> → newline, strip all other HTML tags
+        raw = re.sub(r'<br\s*/?>', '\n', raw, flags=re.I)
+        raw = re.sub(r'<[^>]+>', '', raw)
+        text = html.unescape(raw).strip() or None
 
-    # og:description holds the post text
-    txt_m = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\']([^"\']*)["\']', page)
-    text = html.unescape(txt_m.group(1)).strip() if txt_m else None
+    # CDN image URLs (cdn*.telesco.pe or cdn*.telegram.org)
+    images = re.findall(
+        r'(https://cdn\d*\.(?:telesco\.pe|telegram\.org)/file/[^\s"\'<>]+)',
+        page,
+    )
+    # Deduplicate while preserving order
+    seen_imgs: set[str] = set()
+    unique_images = []
+    for img in images:
+        if img not in seen_imgs:
+            seen_imgs.add(img)
+            unique_images.append(img)
 
-    return image_url, text
+    return unique_images, text
 
 def _process_url(url: str, room_id: str, event_id: str):
     """Download URL and re-post as media in the room. Redacts original on success."""
@@ -477,57 +497,66 @@ def _process_url(url: str, room_id: str, event_id: str):
 
     except Exception as exc:
         # For Telegram posts that have no video/audio, try fetching
-        # the text + preview image from the t.me embed page instead.
+        # the text + images from the t.me embed widget page instead.
         if _is_telegram_url(url) and "no downloadable media" in str(exc).lower():
             log.info("Telegram post has no video — trying text/image fallback for %s", url)
-            image_url, post_text = _fetch_telegram_fallback(url)
+            image_urls, post_text = _fetch_telegram_fallback(url)
 
             caption_plain = (post_text[:900] + "\n\n" if post_text else "") + f"🔗 {url}"
             caption_html  = (
-                (html.escape(post_text[:900]) + "<br><br>" if post_text else "")
+                (html.escape(post_text[:900]).replace("\n", "<br>") + "<br><br>" if post_text else "")
                 + f"🔗 <a href='{html.escape(url)}'>{html.escape(url)}</a>"
             )
 
-            if image_url:
-                try:
-                    img_data = requests.get(image_url, timeout=15).content
-                    ext      = Path(urllib.parse.urlparse(image_url).path).suffix or ".jpg"
-                    img_path = _MEDIA_DIR / f"tg_img_{hashlib.sha256(url.encode()).hexdigest()[:12]}{ext}"
-                    img_path.write_bytes(img_data)
-                    mimetype = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
-                    mxc_uri  = _upload_file(str(img_path), img_path.name, mimetype)
-                    img_path.unlink(missing_ok=True)
-                    content = {
-                        "msgtype": "m.image",
-                        "body":    caption_plain,
-                        "format":  "org.matrix.custom.html",
-                        "formatted_body": caption_html,
-                        "url":  mxc_uri,
-                        "info": {"mimetype": mimetype},
-                    }
-                except Exception as img_exc:
-                    log.warning("Telegram image download failed: %s", img_exc)
-                    content = {
+            sent_id = None
+            if image_urls:
+                # Post each image; caption goes on the first one only
+                for idx, image_url in enumerate(image_urls[:10]):
+                    try:
+                        img_data = requests.get(image_url, timeout=15).content
+                        ext      = Path(urllib.parse.urlparse(image_url).path).suffix or ".jpg"
+                        img_path = _MEDIA_DIR / f"tg_img_{hashlib.sha256(url.encode()).hexdigest()[:12]}_{idx}{ext}"
+                        img_path.write_bytes(img_data)
+                        mimetype = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
+                        mxc_uri  = _upload_file(str(img_path), img_path.name, mimetype)
+                        img_path.unlink(missing_ok=True)
+                        content = {
+                            "msgtype": "m.image",
+                            "body":    caption_plain if idx == 0 else Path(urllib.parse.urlparse(image_url).path).name,
+                            "format":  "org.matrix.custom.html",
+                            "formatted_body": caption_html if idx == 0 else "",
+                            "url":  mxc_uri,
+                            "info": {"mimetype": mimetype},
+                        }
+                        sent = _send_message(room_id, content)
+                        if idx == 0:
+                            sent_id = sent
+                    except Exception as img_exc:
+                        log.warning("Telegram image %d download failed: %s", idx, img_exc)
+                        continue
+                # If no images succeeded, fall back to text-only
+                if sent_id is None and post_text:
+                    sent_id = _send_message(room_id, {
                         "msgtype": "m.text",
                         "body":    caption_plain,
                         "format":  "org.matrix.custom.html",
                         "formatted_body": caption_html,
-                    }
-            else:
-                content = {
+                    })
+            elif post_text:
+                # Text-only post
+                sent_id = _send_message(room_id, {
                     "msgtype": "m.text",
                     "body":    caption_plain,
                     "format":  "org.matrix.custom.html",
                     "formatted_body": caption_html,
-                }
+                })
 
-            sent_id = _send_message(room_id, content)
             if sent_id:
                 _redact_message(room_id, event_id, reason="media reposted by media-bot")
                 _mark_seen(url)
                 log.info("✅ Posted Telegram text/image fallback for %s", url)
             else:
-                _notify_failure(room_id, url, "Failed to post Telegram fallback message")
+                _notify_failure(room_id, url, "Telegram post has no downloadable media or text")
             return
 
         log.exception("Unexpected error processing %s", url)
