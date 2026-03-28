@@ -540,16 +540,13 @@ def _process_url(url: str, room_id: str, event_id: str):
         else:
             _notify_failure(room_id, url, "Failed to post media message to room")
 
-    except yt_dlp.utils.DownloadError as exc:
-        reason = str(exc)
-        log.warning("Download failed for %s: %s", url, reason)
-        _notify_failure(room_id, url, reason)
-
-    except Exception as exc:
-        # For Telegram posts that have no video/audio, try fetching
-        # the text + images from the t.me embed widget page instead.
-        if _is_telegram_url(url) and "no downloadable media" in str(exc).lower():
-            log.info("Telegram post has no video — trying text/image fallback for %s", url)
+    except (yt_dlp.utils.DownloadError, Exception) as exc:
+        # For any Telegram failure (yt-dlp DownloadError OR other exception),
+        # always try the text + image fallback — yt-dlp throws DownloadError for
+        # text-only/image-only posts, so we must not skip fallback on DownloadError.
+        if _is_telegram_url(url):
+            log.info("Telegram download failed (%s) — trying text/image fallback for %s",
+                     type(exc).__name__, url)
             image_urls, post_text = _fetch_telegram_fallback(url)
 
             sent_id = None
