@@ -284,7 +284,7 @@ def _download(url: str) -> tuple[str, dict]:
         "no_warnings": False,
         "noplaylist": True,
         "socket_timeout": 60,
-        "js_runtimes": "node",  # yt-dlp 2026+ requires a JS runtime for YouTube
+        "js_runtimes": "node:/usr/bin/node",  # yt-dlp 2026+ requires a JS runtime for YouTube
     }
 
     # YouTube cookies — required to bypass bot-detection on Shorts/Reels.
