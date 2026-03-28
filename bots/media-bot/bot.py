@@ -304,13 +304,12 @@ def _download(url: str) -> tuple[str, dict]:
         "logger": _logger,
     }
 
-    # YouTube: use iOS player client to bypass bot-detection on public videos.
-    # The iOS client is authenticated differently by YouTube and avoids the
-    # "Sign in to confirm you're not a bot" challenge for public content.
-    # Cookies are still passed as a fallback for private/age-restricted videos.
+    # YouTube: use tv_embedded player client — it serves public videos without
+    # requiring sign-in, PO tokens, or JS challenge solving. ios/web clients in
+    # yt-dlp 2026 require PO tokens to actually stream, causing format errors.
     _is_youtube = "youtube.com" in url or "youtu.be" in url
     if _is_youtube:
-        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["ios", "web"]}}
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded", "web"]}}
 
     # YouTube cookies — passed as fallback for age-restricted / private content.
     # We pass a TEMP COPY to yt-dlp so it cannot overwrite the original file
