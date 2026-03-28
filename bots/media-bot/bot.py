@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 """
-media-bot — Matrix bot that downloads short-form media from links and re-posts them.
+media-bot — Matrix bot that downloads Telegram posts and re-posts them.
 
 Download strategy:
-  • Instagram / TikTok → cobalt.tools public API
-    (no cookies, no IP bans — cobalt handles auth on their side)
-  • Telegram posts     → yt-dlp (cobalt does not support t.me)
+  • Telegram posts → yt-dlp (video/audio posts)
+                  → t.me embed page scrape (text + image posts)
 
 Active URL patterns:
-  • Instagram Reels/Posts  instagram.com/reels/ or /p/
-  • TikTok                 tiktok.com/ or vm.tiktok.com/
-  • Telegram posts         t.me/<channel>/<id>
+  • Telegram posts  t.me/<channel>/<id>
 
-Temporarily disabled (cobalt.tools restriction):
-  • YouTube Shorts         youtube.com/shorts/
-  • Twitter / X            twitter.com/.../status/ or x.com/.../status/
+Disabled (no working downloader available without self-hosted cobalt):
+  • YouTube Shorts, Instagram Reels, TikTok, Twitter/X
+    (cobalt.tools now requires an invite-only API key; YouTube blocked by cobalt)
 
 For each matching URL in a room message the bot will:
   1. Download the media
@@ -34,10 +31,6 @@ Optional environment variables:
   MATRIX_INTERNAL_URL   default: http://matrix-synapse:8008
   MATRIX_ROOM_ID        Restrict processing to one room ID
   MAX_FILE_SIZE_MB      Maximum download size in MB; default: 250
-  COBALT_API_URL        cobalt API base URL; default: https://api.cobalt.tools
-                        Point to a self-hosted instance to avoid needing an API key.
-  COBALT_API_KEY        cobalt API key (Api-Key token); required for api.cobalt.tools
-                        as of early 2026. Not needed when self-hosting cobalt.
   TELEGRAM_API_ID       Telegram app api_id (for t.me link downloads)
   TELEGRAM_API_HASH     Telegram app api_hash (for t.me link downloads)
   PORT                  Health endpoint port; default: 3003
@@ -68,8 +61,6 @@ BOT_PASSWORD        = os.environ.get("BOT_PASSWORD", "")
 MATRIX_DOMAIN       = os.environ.get("MATRIX_DOMAIN", "")
 MATRIX_ROOM_ID      = os.environ.get("MATRIX_ROOM_ID", "")
 MAX_FILE_SIZE_MB    = int(os.environ.get("MAX_FILE_SIZE_MB", "250"))
-COBALT_API_URL      = os.environ.get("COBALT_API_URL", "https://api.cobalt.tools").rstrip("/")
-COBALT_API_KEY      = os.environ.get("COBALT_API_KEY", "")
 TELEGRAM_API_ID     = os.environ.get("TELEGRAM_API_ID", "")
 TELEGRAM_API_HASH   = os.environ.get("TELEGRAM_API_HASH", "")
 PORT                = int(os.environ.get("PORT", "3003"))
@@ -100,13 +91,14 @@ log = logging.getLogger("media-bot")
 # ── URL allowlist patterns ─────────────────────────────────────────────────────
 
 _URL_PATTERNS = [
-    # YouTube disabled: cobalt.tools has temporarily suspended YouTube support
-    # re.compile(r'https?://(?:www\.)?youtube\.com/shorts/[\w-]+', re.I),
-    re.compile(r'https?://(?:www\.)?instagram\.com/(?:reels?|p)/[\w-]+/?', re.I),
-    re.compile(r'https?://(?:www\.)?tiktok\.com/@?[\w.%-]+/video/\d+', re.I),
-    re.compile(r'https?://(?:vm|vt)\.tiktok\.com/[\w-]+', re.I),
     re.compile(r'https?://t\.me/\w+/\d+', re.I),
-    # Twitter/X disabled along with YouTube — re-enable when cobalt restores support
+    # All other platforms disabled — cobalt.tools requires invite-only API key,
+    # YouTube support suspended by cobalt. Re-enable when a working downloader
+    # is available:
+    # re.compile(r'https?://(?:www\.)?youtube\.com/shorts/[\w-]+', re.I),
+    # re.compile(r'https?://(?:www\.)?instagram\.com/(?:reels?|p)/[\w-]+/?', re.I),
+    # re.compile(r'https?://(?:www\.)?tiktok\.com/@?[\w.%-]+/video/\d+', re.I),
+    # re.compile(r'https?://(?:vm|vt)\.tiktok\.com/[\w-]+', re.I),
     # re.compile(r'https?://(?:www\.)?(?:twitter|x)\.com/\w+/status/\d+', re.I),
 ]
 
@@ -277,92 +269,6 @@ def _is_telegram_url(url: str) -> bool:
     return bool(re.match(r'https?://t\.me/', url, re.I))
 
 
-# ── cobalt.tools downloader ───────────────────────────────────────────────────
-# cobalt.tools is a public media download API that handles YouTube, Instagram,
-# TikTok, Twitter/X and many others on their own infrastructure — no cookies or
-# IP authentication needed on the server side.
-
-def _cobalt_download(url: str) -> tuple[str, str]:
-    """
-    Download a media URL via the cobalt.tools API.
-    Returns (local_filepath, filename).
-    Raises RuntimeError on API error or download failure.
-    """
-    _MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
-
-    log.info("cobalt: requesting %s", url)
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    if COBALT_API_KEY:
-        headers["Authorization"] = f"Api-Key {COBALT_API_KEY}"
-    try:
-        resp = requests.post(
-            f"{COBALT_API_URL}/",
-            json={"url": url, "videoQuality": "max", "downloadMode": "auto"},
-            headers=headers,
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise RuntimeError(f"cobalt API request failed: {exc}") from exc
-
-    # Always parse the JSON body first — cobalt returns error details even on
-    # non-200 HTTP status codes (e.g. 400 with {"status":"error","error":{...}})
-    try:
-        data = resp.json()
-    except Exception:
-        resp.raise_for_status()
-        raise RuntimeError("cobalt API returned non-JSON response")
-
-    status = data.get("status")
-    log.info("cobalt: status=%s (HTTP %d)", status, resp.status_code)
-
-    if status == "error" or not resp.ok:
-        err = data.get("error", {})
-        code = err.get("code", "unknown") if isinstance(err, dict) else str(err)
-        raise RuntimeError(f"cobalt error: {code}")
-
-    if status in ("tunnel", "redirect"):
-        media_url = data["url"]
-        filename  = data.get("filename") or f"{url_hash}.mp4"
-        return _cobalt_fetch_file(media_url, filename, url_hash)
-
-    if status == "picker":
-        # Multiple items (e.g. Twitter with image+video, slideshow)
-        items = data.get("picker", [])
-        if not items:
-            raise RuntimeError("cobalt returned empty picker")
-        # Download the first item that has a URL
-        for item in items:
-            item_url = item.get("url")
-            if item_url:
-                filename = item.get("filename") or f"{url_hash}.mp4"
-                return _cobalt_fetch_file(item_url, filename, url_hash)
-        raise RuntimeError("cobalt picker had no downloadable items")
-
-    raise RuntimeError(f"cobalt returned unexpected status: {status}")
-
-
-def _cobalt_fetch_file(media_url: str, filename: str, url_hash: str) -> tuple[str, str]:
-    """Stream a cobalt media URL to disk. Returns (filepath, filename)."""
-    max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
-    ext = Path(filename).suffix or ".mp4"
-    filepath = str(_MEDIA_DIR / f"{url_hash}{ext}")
-
-    log.info("cobalt: downloading %s → %s", media_url, filepath)
-    with requests.get(media_url, stream=True, timeout=120) as r:
-        r.raise_for_status()
-        downloaded = 0
-        with open(filepath, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 256):
-                downloaded += len(chunk)
-                if downloaded > max_bytes:
-                    raise RuntimeError(
-                        f"File exceeds {MAX_FILE_SIZE_MB} MB size limit"
-                    )
-                f.write(chunk)
-    return filepath, filename
-
-
 # ── yt-dlp downloader (Telegram only) ────────────────────────────────────────
 
 class _YDLLogger:
@@ -504,13 +410,11 @@ def _process_url(url: str, room_id: str, event_id: str):
 
     try:
         if _is_telegram_url(url):
-            # Telegram: use yt-dlp (cobalt doesn't support t.me)
             filepath, info = _download_telegram(url)
             title = (info.get("description") or info.get("title") or "").strip()
         else:
-            # YouTube / Instagram / TikTok / Twitter: use cobalt.tools
-            filepath, _filename = _cobalt_download(url)
-            title = ""  # cobalt doesn't return metadata
+            # Should not reach here — only Telegram URLs are active in _URL_PATTERNS
+            raise RuntimeError(f"No downloader configured for: {url}")
 
         ext = Path(filepath).suffix.lower()
         mimetype = _MIME.get(ext) or mimetypes.guess_type(filepath)[0] or "application/octet-stream"
