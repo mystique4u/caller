@@ -91,7 +91,7 @@ log = logging.getLogger("media-bot")
 
 _URL_PATTERNS = [
     re.compile(r'https?://(?:www\.)?youtube\.com/shorts/[\w-]+', re.I),
-    re.compile(r'https?://(?:www\.)?instagram\.com/(?:reel|p)/[\w-]+/?', re.I),
+    re.compile(r'https?://(?:www\.)?instagram\.com/(?:reels?|p)/[\w-]+/?', re.I),
     re.compile(r'https?://(?:www\.)?tiktok\.com/@?[\w.%-]+/video/\d+', re.I),
     re.compile(r'https?://(?:vm|vt)\.tiktok\.com/[\w-]+', re.I),
     re.compile(r'https?://t\.me/\w+/\d+', re.I),
