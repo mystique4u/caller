@@ -290,7 +290,6 @@ def _download(url: str) -> tuple[str, dict]:
     # These are invalid for other extractors (Telegram, TikTok, etc.)
     _is_youtube = "youtube.com" in url or "youtu.be" in url
     if _is_youtube:
-        ydl_opts["js_runtimes"] = "node:/usr/bin/node"
         ydl_opts["remote_components"] = "ejs:github"
 
     # YouTube cookies — required to bypass bot-detection on Shorts/Reels.
@@ -379,7 +378,11 @@ def _process_url(url: str, room_id: str, event_id: str):
         mxc_uri = _upload_file(filepath, filename, mimetype)
 
         # Build caption
-        title = (info.get("title") or info.get("description") or "").strip()
+        # For Telegram, description = the post text; title = channel name or generic
+        if _is_telegram_url(url):
+            title = (info.get("description") or info.get("title") or "").strip()
+        else:
+            title = (info.get("title") or info.get("description") or "").strip()
         caption_plain = (title[:900] + "\n\n" if title else "") + f"🔗 {url}"
         caption_html = (
             (html.escape(title[:900]) + "<br><br>" if title else "")

@@ -352,7 +352,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
             "docker ps | grep -q mailserver && \
              docker exec mailserver setup email add noreply@${DOMAIN_NAME} \
-               \$(openssl rand -base64 24) 2>&1 | grep -v 'already exists' || true" || true
+               \$(openssl rand -base64 24) 2>&1 | grep -v 'already exists\|addmailuser\|Aborting' || true" || true
 
           scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
             /tmp/media-bot-notification.txt \
