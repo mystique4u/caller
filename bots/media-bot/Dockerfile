@@ -9,6 +9,11 @@ RUN apk add --no-cache ffmpeg gcc musl-dev libffi-dev nodejs
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-install the EJS (External JavaScript Solver) used by yt-dlp to solve
+# YouTube's n-challenge (throttling bypass). Baking it into the image avoids
+# fetching it from GitHub at runtime and removes the "skipped solver" warning.
+RUN yt-dlp --install-remote-components ejs || true
+
 COPY bot.py setup_telegram_session.py ./
 
 RUN mkdir -p /data
