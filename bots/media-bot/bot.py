@@ -424,6 +424,22 @@ def _extract_urls(text: str) -> list[str]:
 
 def _process_sync_result(result: dict):
     bot_user_id = f"@{BOT_USERNAME}:{MATRIX_DOMAIN}"
+
+    # Auto-accept room invitations
+    invited_rooms = result.get("rooms", {}).get("invite", {})
+    for room_id in invited_rooms:
+        log.info("Received invite to %s — joining", room_id)
+        status, body = _api(
+            "POST",
+            f"/_matrix/client/v3/join/{urllib.parse.quote(room_id)}",
+            body={},
+            token=_access_token,
+        )
+        if status == 200:
+            log.info("Joined room %s", room_id)
+        else:
+            log.warning("Failed to join %s: %s %s", room_id, status, body)
+
     joined_rooms = result.get("rooms", {}).get("join", {})
 
     for room_id, room_data in joined_rooms.items():
@@ -456,7 +472,7 @@ def _process_sync_result(result: dict):
 def _sync_loop():
     since = _BATCH_FILE.read_text().strip() if _BATCH_FILE.exists() else ""
 
-    # On first start, fetch current sync token without processing old messages
+    # On first start (or reset), fetch current state including pending invites
     if not since:
         log.info("No sync token found — performing initial sync to establish position")
         status, body = _api(
@@ -467,6 +483,8 @@ def _sync_loop():
         )
         if status != 200:
             raise RuntimeError(f"Initial sync failed ({status}): {body}")
+        # Process initial sync result to handle any pending invites
+        _process_sync_result(body)
         since = body.get("next_batch", "")
         _BATCH_FILE.write_text(since)
         log.info("Initial sync done. Starting live sync from %s", since[:20])
