@@ -1,8 +1,9 @@
 name: Sync State to StorageBox
-# Mirrors current server state to StorageBox via lftp mirror --delete.
+# Mirrors current server state to StorageBox via rsync over SSH (port 23).
 # StorageBox always reflects the live server — no snapshots, no rotation.
 # The state-sync script lives at /opt/backup/state-sync.sh (deployed by Ansible).
 # Runs automatically at 2 AM daily (cron on server) and can be triggered manually here.
+# After each sync a summary email is sent to ADMIN_EMAIL (EMAIL_ADDRESS secret).
 
 on:
   workflow_dispatch: {}
@@ -32,17 +33,16 @@ jobs:
             "STORAGEBOX_HOST='${{ secrets.STORAGEBOX_HOST }}' \
              STORAGEBOX_USER='${{ secrets.STORAGEBOX_USER }}' \
              STORAGEBOX_PASSWORD='${{ secrets.STORAGEBOX_PASSWORD }}' \
+             ADMIN_EMAIL='${{ secrets.EMAIL_ADDRESS }}' \
+             DOMAIN_NAME='${{ secrets.DOMAIN_NAME }}' \
              /opt/backup/state-sync.sh"
 
       - name: Show StorageBox state summary
         run: |
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP || '46.224.49.30' }} << REMOTE
-          lftp -u "${{ secrets.STORAGEBOX_USER }},${{ secrets.STORAGEBOX_PASSWORD }}" \
-               -p 23 "sftp://${{ secrets.STORAGEBOX_HOST }}" << LFTP
-          set sftp:auto-confirm yes
-          set ssl:verify-certificate no
-          du -s /home/backups/hosts/caller/state/*
-          bye
-          LFTP
-          REMOTE
+          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP || '46.224.49.30' }} \
+            "sshpass -p '${{ secrets.STORAGEBOX_PASSWORD }}' \
+               rsync --list-only \
+               -e 'ssh -p 23 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' \
+               '${{ secrets.STORAGEBOX_USER }}@${{ secrets.STORAGEBOX_HOST }}:/home/backups/hosts/caller/state/' \
+             | head -40 || echo 'Could not list StorageBox state'"
 

@@ -1,9 +1,9 @@
 ---
 # Backup Configuration Tasks
 #
-# Uses lftp mirror (rsync-equivalent over SFTP) to keep StorageBox in sync with
-# the current server state. No snapshots — StorageBox always reflects exactly
-# what is on the server right now.
+# Uses rsync over SSH (port 23) to keep StorageBox in sync with the current
+# server state. No snapshots — StorageBox always reflects exactly what is on
+# the server right now. Only changed files are transferred on each run.
 #
 # StorageBox structure:
 #   /home/backups/hosts/caller/state/
@@ -32,13 +32,15 @@
       #!/bin/bash
       set -euo pipefail
 
-      # state-sync.sh — mirrors /opt/services persistent state to Hetzner StorageBox.
-      # Uses lftp mirror with --delete: StorageBox always matches current server state.
-      # No timestamps, no rotation, no wasted space.
+      # state-sync.sh — mirrors /opt/services persistent state to Hetzner StorageBox
+      # via rsync over SSH (port 23). StorageBox always matches current server state.
+      # No timestamps, no rotation, no wasted space. Only changed files transferred.
       #
       # Environment variables required (set via cron env or exported before running):
       #   STORAGEBOX_HOST, STORAGEBOX_USER, STORAGEBOX_PASSWORD
       #   Optionally: STORAGEBOX_PORT (default: 23)
+      #   Optionally: ADMIN_EMAIL  — if set, an email report is sent after sync
+      #               DOMAIN_NAME  — used in the email subject/from address
 
       SB_HOST="${STORAGEBOX_HOST}"
       SB_USER="${STORAGEBOX_USER}"
@@ -46,50 +48,127 @@
       SB_PORT="${STORAGEBOX_PORT:-23}"
       REMOTE_STATE="/home/backups/hosts/caller/state"
 
-      lftp_mirror_up() {
-          local src="$1" dest="$2" opts="${3:-}"
-          lftp -u "${SB_USER},${SB_PASS}" -p "${SB_PORT}" "sftp://${SB_HOST}" << LFTP
-      set sftp:auto-confirm yes
-      set ssl:verify-certificate no
-      mkdir -p ${REMOTE_STATE}/${dest}
-      mirror -R --delete ${opts} ${src} ${REMOTE_STATE}/${dest}
-      bye
-      LFTP
+      rsync_up() {
+          local src="$1" dest="$2"
+          shift 2
+          sshpass -p "${SB_PASS}" rsync -az --delete \
+              -e "ssh -p ${SB_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+              "$@" \
+              "${src}/" \
+              "${SB_USER}@${SB_HOST}:${REMOTE_STATE}/${dest}/"
       }
 
-      echo "=== State sync started at $(date) ==="
+      START_TIME=$(date)
+      echo "=== State sync started at ${START_TIME} ==="
 
       echo "🗄️  PostgreSQL — dumping..."
       mkdir -p /opt/backup/db
       docker exec matrix-postgres pg_dump -U synapse synapse > /opt/backup/db/synapse.sql
       echo "🗄️  PostgreSQL — syncing dump..."
-      lftp_mirror_up /opt/backup/db db
+      rsync_up /opt/backup/db db
 
       echo "🔒 Traefik (SSL certs + dynamic config)..."
-      lftp_mirror_up /opt/services/traefik traefik
+      rsync_up /opt/services/traefik traefik
 
       echo "💬 Matrix Synapse data (config, media store, signing key)..."
-      lftp_mirror_up /opt/services/matrix/synapse matrix-synapse
+      rsync_up /opt/services/matrix/synapse matrix-synapse
 
       echo "📹 Jitsi config..."
-      lftp_mirror_up /opt/services/jitsi jitsi
+      rsync_up /opt/services/jitsi jitsi
 
       echo "🔐 WireGuard kernel config..."
-      lftp_mirror_up /etc/wireguard wireguard
+      rsync_up /etc/wireguard wireguard
 
       echo "🔐 WireGuard UI database..."
-      lftp_mirror_up /opt/services/wireguard-ui wireguard-ui
+      rsync_up /opt/services/wireguard-ui wireguard-ui
 
       echo "🗺️  RouteMaker data..."
-      lftp_mirror_up /opt/services/routemaker/data routemaker-data
+      rsync_up /opt/services/routemaker/data routemaker-data
 
       echo "📧 Mail server (accounts, DKIM keys, config)..."
-      lftp_mirror_up /opt/services/mailserver mailserver
+      rsync_up /opt/services/mailserver mailserver
 
       echo "🤖 Bots (credentials, tokens, sessions — excluding in-progress downloads)..."
-      lftp_mirror_up /opt/services/bots bots "-x 'media-bot/data/media'"
+      rsync_up /opt/services/bots bots --exclude='media-bot/data/media/'
 
-      echo "=== State sync complete at $(date) ==="
+      END_TIME=$(date)
+      echo "=== State sync complete at ${END_TIME} ==="
+
+      # ── Post-sync email report ─────────────────────────────────────────────
+      if [[ -z "${ADMIN_EMAIL:-}" ]]; then
+          echo "ADMIN_EMAIL not set — skipping email report"
+          exit 0
+      fi
+
+      DOMAIN="${DOMAIN_NAME:-$(hostname -f)}"
+
+      # Quota via sftp (Hetzner StorageBox reports quota in df output)
+      QUOTA_INFO=$(sshpass -p "${SB_PASS}" ssh \
+          -p "${SB_PORT}" \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          "${SB_USER}@${SB_HOST}" \
+          "df -h /home 2>/dev/null || echo 'quota unavailable'" 2>/dev/null || echo "quota unavailable")
+
+      # Parse used/total/percent from df output (second line)
+      USED=$(echo "${QUOTA_INFO}"   | awk 'NR==2 {print $3}')
+      TOTAL=$(echo "${QUOTA_INFO}"  | awk 'NR==2 {print $2}')
+      AVAIL=$(echo "${QUOTA_INFO}"  | awk 'NR==2 {print $4}')
+      PCT=$(echo "${QUOTA_INFO}"    | awk 'NR==2 {print $5}' | tr -d '%')
+
+      # Per-directory sizes on StorageBox
+      DIR_SIZES=$(sshpass -p "${SB_PASS}" ssh \
+          -p "${SB_PORT}" \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          "${SB_USER}@${SB_HOST}" \
+          "du -sh ${REMOTE_STATE}/* 2>/dev/null" 2>/dev/null || echo "unavailable")
+
+      # Warn if quota > 95%
+      if [[ "${PCT}" =~ ^[0-9]+$ ]] && (( PCT >= 95 )); then
+          WARN_LINE="⚠️  WARNING: StorageBox is ${PCT}% full — only ${AVAIL} remaining!"
+          SUBJECT="⚠️ BACKUP REPORT [DISK ALMOST FULL] — ${DOMAIN}"
+      else
+          WARN_LINE="Storage usage is normal (${PCT:-?}% used)."
+          SUBJECT="✅ Backup Report — ${DOMAIN}"
+      fi
+
+      BODY_FILE=$(mktemp)
+      cat > "${BODY_FILE}" << BODY
+      StorageBox Backup Report — ${DOMAIN}
+      ──────────────────────────────────────────────────────
+      Started : ${START_TIME}
+      Finished: ${END_TIME}
+
+      ── STORAGE QUOTA ─────────────────────────────────────
+      Used  : ${USED:-?} / ${TOTAL:-?}  (${PCT:-?}%)
+      Free  : ${AVAIL:-?}
+
+      ${WARN_LINE}
+
+      ── PER-DIRECTORY SIZES ───────────────────────────────
+      ${DIR_SIZES}
+
+      ── BACKED UP ─────────────────────────────────────────
+        db/              PostgreSQL dump
+        traefik/         SSL certificates + dynamic config
+        matrix-synapse/  Synapse data, media store, signing key
+        jitsi/           Jitsi configuration
+        wireguard/       WireGuard kernel configuration
+        wireguard-ui/    WireGuard UI database
+        routemaker-data/ RouteMaker waypoints and data
+        mailserver/      Mail accounts, DKIM keys, configuration
+        bots/            Bot credentials, Telegram sessions, state
+      ──────────────────────────────────────────────────────
+      BODY
+      sed -i 's/^      //' "${BODY_FILE}"
+
+      python3 /opt/services/mailserver/send-email.py \
+          "${ADMIN_EMAIL}" \
+          "${SUBJECT}" \
+          "${BODY_FILE}" && echo "✅ Backup report sent to ${ADMIN_EMAIL}"
+
+      rm -f "${BODY_FILE}"
     dest: /opt/backup/state-sync.sh
     mode: '0700'
 
@@ -113,15 +192,13 @@
       SB_PORT="${STORAGEBOX_PORT:-23}"
       REMOTE_STATE="/home/backups/hosts/caller/state"
 
-      lftp_mirror_down() {
+      rsync_down() {
           local src="$1" dst="$2"
           mkdir -p "$dst"
-          lftp -u "${SB_USER},${SB_PASS}" -p "${SB_PORT}" "sftp://${SB_HOST}" << LFTP
-      set sftp:auto-confirm yes
-      set ssl:verify-certificate no
-      mirror --delete ${REMOTE_STATE}/${src} ${dst}
-      bye
-      LFTP
+          sshpass -p "${SB_PASS}" rsync -az --delete \
+              -e "ssh -p ${SB_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+              "${SB_USER}@${SB_HOST}:${REMOTE_STATE}/${src}/" \
+              "${dst}/"
       }
 
       echo "=== State restore started at $(date) ==="
@@ -130,32 +207,32 @@
       cd /opt/services && docker compose down 2>/dev/null || true
 
       echo "🔒 Restoring Traefik..."
-      lftp_mirror_down traefik /opt/services/traefik
+      rsync_down traefik /opt/services/traefik
       chmod 600 /opt/services/traefik/acme/acme.json 2>/dev/null || true
 
       echo "💬 Restoring Matrix Synapse data..."
-      lftp_mirror_down matrix-synapse /opt/services/matrix/synapse
+      rsync_down matrix-synapse /opt/services/matrix/synapse
 
       echo "📹 Restoring Jitsi config..."
-      lftp_mirror_down jitsi /opt/services/jitsi
+      rsync_down jitsi /opt/services/jitsi
 
       echo "🔐 Restoring WireGuard..."
-      lftp_mirror_down wireguard /etc/wireguard
+      rsync_down wireguard /etc/wireguard
       chmod 600 /etc/wireguard/*.conf 2>/dev/null || true
-      lftp_mirror_down wireguard-ui /opt/services/wireguard-ui
+      rsync_down wireguard-ui /opt/services/wireguard-ui
 
       echo "🗺️  Restoring RouteMaker data..."
-      lftp_mirror_down routemaker-data /opt/services/routemaker/data
+      rsync_down routemaker-data /opt/services/routemaker/data
 
       echo "📧 Restoring mail server..."
-      lftp_mirror_down mailserver /opt/services/mailserver
+      rsync_down mailserver /opt/services/mailserver
 
       echo "🤖 Restoring bots (credentials + state)..."
-      lftp_mirror_down bots /opt/services/bots
+      rsync_down bots /opt/services/bots
       find /opt/services/bots -name '.credentials' -exec chmod 600 {} \;
 
       echo "🗄️  Restoring PostgreSQL..."
-      lftp_mirror_down db /opt/backup/db
+      rsync_down db /opt/backup/db
       if [ -f /opt/backup/db/synapse.sql ]; then
           cd /opt/services && docker compose up -d matrix-postgres
           echo "⏳ Waiting for PostgreSQL to be ready..."
@@ -198,6 +275,10 @@
       value: "{{ lookup('env', 'STORAGEBOX_USER') }}"
     - name: STORAGEBOX_PASSWORD
       value: "{{ lookup('env', 'STORAGEBOX_PASSWORD') }}"
+    - name: ADMIN_EMAIL
+      value: "{{ email_address }}"
+    - name: DOMAIN_NAME
+      value: "{{ domain_name }}"
 
 - name: Create daily state-sync cron job (2 AM)
   cron:
