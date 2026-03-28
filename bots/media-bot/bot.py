@@ -59,6 +59,7 @@ MATRIX_ROOM_ID      = os.environ.get("MATRIX_ROOM_ID", "")
 MAX_FILE_SIZE_MB    = int(os.environ.get("MAX_FILE_SIZE_MB", "250"))
 TELEGRAM_API_ID     = os.environ.get("TELEGRAM_API_ID", "")
 TELEGRAM_API_HASH   = os.environ.get("TELEGRAM_API_HASH", "")
+YOUTUBE_COOKIES_FILE = os.environ.get("YOUTUBE_COOKIES_FILE", "/data/youtube-cookies.txt")
 PORT                = int(os.environ.get("PORT", "3003"))
 
 if not BOT_PASSWORD:
@@ -282,6 +283,12 @@ def _download(url: str) -> tuple[str, dict]:
         "noplaylist": True,
         "socket_timeout": 60,
     }
+
+    # YouTube cookies — required to bypass bot-detection on Shorts/Reels
+    cookies_path = Path(YOUTUBE_COOKIES_FILE)
+    if cookies_path.exists():
+        ydl_opts["cookiefile"] = str(cookies_path)
+        log.debug("Using cookies from %s", cookies_path)
 
     # Telegram credentials for t.me link downloads
     if _is_telegram_url(url):

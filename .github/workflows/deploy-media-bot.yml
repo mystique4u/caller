@@ -153,6 +153,25 @@ jobs:
             echo "✅ Matrix user @${BOT_USERNAME} registered"
           fi
 
+      - name: Deploy YouTube cookies from GitHub Secret (if set)
+        env:
+          SERVER_IP:              ${{ needs.get-server-ip.outputs.server_ip }}
+          YOUTUBE_COOKIES_B64:    ${{ secrets.YOUTUBE_COOKIES_B64 }}
+        run: |
+          if [[ -z "$YOUTUBE_COOKIES_B64" ]]; then
+            echo "ℹ️  YOUTUBE_COOKIES_B64 not set — YouTube Shorts may be blocked"
+            echo "   To fix: export cookies from your browser (see instructions below)"
+            exit 0
+          fi
+          echo "$YOUTUBE_COOKIES_B64" | base64 -d > /tmp/youtube-cookies.txt
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+            /tmp/youtube-cookies.txt \
+            "root@${SERVER_IP}:/opt/services/bots/media-bot/data/youtube-cookies.txt"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "chmod 600 '/opt/services/bots/media-bot/data/youtube-cookies.txt'"
+          rm -f /tmp/youtube-cookies.txt
+          echo "✅ YouTube cookies deployed — Shorts downloads will work immediately"
+
       - name: Deploy Telegram session from GitHub Secret (if set)
         env:
           SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
