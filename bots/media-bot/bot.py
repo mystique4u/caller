@@ -304,12 +304,12 @@ def _download(url: str) -> tuple[str, dict]:
         "logger": _logger,
     }
 
-    # YouTube: use tv_embedded player client — it serves public videos without
-    # requiring sign-in, PO tokens, or JS challenge solving. ios/web clients in
-    # yt-dlp 2026 require PO tokens to actually stream, causing format errors.
+    # YouTube: mweb (mobile web) player client works for public videos without
+    # PO tokens. tv_embedded and ios require PO tokens in yt-dlp 2026.
+    # Cookies (when fresh) are also passed for sign-in confirmation fallback.
     _is_youtube = "youtube.com" in url or "youtu.be" in url
     if _is_youtube:
-        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["tv_embedded", "web"]}}
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "android_vr"]}}
 
     # YouTube cookies — passed as fallback for age-restricted / private content.
     # We pass a TEMP COPY to yt-dlp so it cannot overwrite the original file
@@ -502,15 +502,24 @@ def _process_url(url: str, room_id: str, event_id: str):
             log.info("Telegram post has no video — trying text/image fallback for %s", url)
             image_urls, post_text = _fetch_telegram_fallback(url)
 
-            caption_plain = (post_text[:900] + "\n\n" if post_text else "") + f"🔗 {url}"
-            caption_html  = (
-                (html.escape(post_text[:900]).replace("\n", "<br>") + "<br><br>" if post_text else "")
-                + f"🔗 <a href='{html.escape(url)}'>{html.escape(url)}</a>"
-            )
-
             sent_id = None
+            if post_text or image_urls:
+                # Always send text + link as a plain chat message first
+                text_msg = (
+                    (html.escape(post_text[:900]).replace("\n", "<br>") if post_text else "")
+                    + ("<br><br>" if post_text else "")
+                    + f"🔗 <a href='{html.escape(url)}'>{html.escape(url)}</a>"
+                )
+                text_plain = (post_text[:900] + "\n\n" if post_text else "") + f"🔗 {url}"
+                sent_id = _send_message(room_id, {
+                    "msgtype": "m.text",
+                    "body":    text_plain,
+                    "format":  "org.matrix.custom.html",
+                    "formatted_body": text_msg,
+                })
+
             if image_urls:
-                # Post each image; caption goes on the first one only
+                # Post each image as a clean m.image (no caption body — text already sent above)
                 for idx, image_url in enumerate(image_urls[:10]):
                     try:
                         img_data = requests.get(image_url, timeout=15).content
@@ -520,36 +529,16 @@ def _process_url(url: str, room_id: str, event_id: str):
                         mimetype = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
                         mxc_uri  = _upload_file(str(img_path), img_path.name, mimetype)
                         img_path.unlink(missing_ok=True)
-                        content = {
+                        _send_message(room_id, {
                             "msgtype": "m.image",
-                            "body":    caption_plain if idx == 0 else Path(urllib.parse.urlparse(image_url).path).name,
-                            "format":  "org.matrix.custom.html",
-                            "formatted_body": caption_html if idx == 0 else "",
-                            "url":  mxc_uri,
-                            "info": {"mimetype": mimetype},
-                        }
-                        sent = _send_message(room_id, content)
-                        if idx == 0:
-                            sent_id = sent
+                            "body":    img_path.name,
+                            "url":     mxc_uri,
+                            "info":    {"mimetype": mimetype},
+                        })
+                        if sent_id is None:
+                            sent_id = True  # at least one message sent
                     except Exception as img_exc:
                         log.warning("Telegram image %d download failed: %s", idx, img_exc)
-                        continue
-                # If no images succeeded, fall back to text-only
-                if sent_id is None and post_text:
-                    sent_id = _send_message(room_id, {
-                        "msgtype": "m.text",
-                        "body":    caption_plain,
-                        "format":  "org.matrix.custom.html",
-                        "formatted_body": caption_html,
-                    })
-            elif post_text:
-                # Text-only post
-                sent_id = _send_message(room_id, {
-                    "msgtype": "m.text",
-                    "body":    caption_plain,
-                    "format":  "org.matrix.custom.html",
-                    "formatted_body": caption_html,
-                })
 
             if sent_id:
                 _redact_message(room_id, event_id, reason="media reposted by media-bot")
