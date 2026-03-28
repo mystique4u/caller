@@ -411,7 +411,11 @@ def _process_url(url: str, room_id: str, event_id: str):
     try:
         if _is_telegram_url(url):
             filepath, info = _download_telegram(url)
-            title = (info.get("description") or info.get("title") or "").strip()
+            # yt-dlp's "description" / "title" on Telegram is usually the channel
+            # name, not the post caption. Always scrape the embed page for the
+            # actual post text so video + text posts include the caption.
+            _, scraped_text = _fetch_telegram_fallback(url)
+            title = (scraped_text or info.get("description") or info.get("title") or "").strip()
         else:
             # Should not reach here — only Telegram URLs are active in _URL_PATTERNS
             raise RuntimeError(f"No downloader configured for: {url}")
