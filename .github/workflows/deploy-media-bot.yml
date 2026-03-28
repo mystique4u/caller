@@ -153,6 +153,29 @@ jobs:
             echo "✅ Matrix user @${BOT_USERNAME} registered"
           fi
 
+      - name: Deploy Telegram session from GitHub Secret (if set)
+        env:
+          SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
+          TELEGRAM_API_ID:       ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_SESSION_B64:  ${{ secrets.TELEGRAM_SESSION_B64 }}
+        run: |
+          if [[ -z "$TELEGRAM_SESSION_B64" ]]; then
+            echo "ℹ️  TELEGRAM_SESSION_B64 not set — skipping session deploy"
+            echo "   To automate t.me/ downloads, run locally:"
+            echo "   python3 bots/media-bot/setup_telegram_session.py --local"
+            echo "   Then add TELEGRAM_SESSION_B64 as a GitHub Secret."
+            exit 0
+          fi
+          SESSION_FILENAME="+sessions+${TELEGRAM_API_ID}.session"
+          echo "$TELEGRAM_SESSION_B64" | base64 -d > /tmp/tg_session.session
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+            /tmp/tg_session.session \
+            "root@${SERVER_IP}:/opt/services/bots/media-bot/data/${SESSION_FILENAME}"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
+            "chmod 600 '/opt/services/bots/media-bot/data/${SESSION_FILENAME}'"
+          rm -f /tmp/tg_session.session
+          echo "✅ Telegram session deployed — t.me/ links will work immediately"
+
       - name: Write docker-compose override for media-bot
         env:
           SERVER_IP:        ${{ needs.get-server-ip.outputs.server_ip }}
@@ -283,15 +306,17 @@ jobs:
             • Telegram posts    t.me/<channel>/<id>
 
           ── TELEGRAM t.me DOWNLOADS ───────────────────────────────────
-            If TELEGRAM_API_ID and TELEGRAM_API_HASH were set as GitHub
-            Secrets, t.me/ links are enabled. However a one-time phone
-            authentication is required on the server:
+            If TELEGRAM_SESSION_B64 was set as a GitHub Secret, t.me/ links
+            are already working — no manual steps needed.
 
-              ssh root@<server>
-              docker exec -it media-bot python3 /app/setup_telegram_session.py
+            If it was NOT set, run this ONCE locally to enable t.me/ downloads:
+              pip install telethon
+              export TELEGRAM_API_ID=<your_api_id>
+              export TELEGRAM_API_HASH=<your_api_hash>
+              python3 bots/media-bot/setup_telegram_session.py --local
 
-            (Takes ~30 seconds. The session is backed up daily and
-            survives server restores — no re-auth needed after restore.)
+            Follow the printed instructions to add TELEGRAM_SESSION_B64
+            to GitHub Secrets. Re-run the workflow once — done forever.
 
           ── CREDENTIALS (server-side only) ────────────────────────────
             Bot password stored at:

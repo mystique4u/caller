@@ -1,27 +1,16 @@
-name: Restore from Storage Box Backup
+name: Restore State from StorageBox
+# Restores all persistent server state from StorageBox using the state-restore script.
+# The script lives at /opt/backup/state-restore.sh (deployed by Ansible).
+#
+# Use this after deploying to new infrastructure (Terraform + Ansible) to recover
+# all data: SSL certs, WireGuard peers, Matrix data, bot credentials, etc.
+# Services are stopped before restore and restarted after.
 
 on:
   workflow_dispatch:
     inputs:
-      backup_date:
-        description: 'Backup date to restore (format: YYYYMMDD_HHMMSS or "latest")'
-        required: true
-        default: 'latest'
-      restore_components:
-        description: 'What to restore'
-        required: true
-        type: choice
-        options:
-          - 'all'
-          - 'database-only'
-          - 'matrix-only'
-          - 'jitsi-only'
-          - 'wireguard-only'
-          - 'traefik-only'
-          - 'mailserver-only'
-        default: 'all'
       confirm:
-        description: 'Type "RESTORE" to confirm (will overwrite current data!)'
+        description: 'Type RESTORE to confirm (will overwrite current server state)'
         required: true
 
 env:
@@ -29,17 +18,17 @@ env:
 
 jobs:
   restore:
-    name: Restore from Backup
+    name: Restore state from StorageBox
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Verify confirmation
         run: |
           if [ "${{ github.event.inputs.confirm }}" != "RESTORE" ]; then
-            echo "❌ Confirmation failed. You must type 'RESTORE' to proceed."
+            echo "❌ Type RESTORE to confirm. Aborting."
             exit 1
           fi
-          echo "✅ Confirmation verified"
+          echo "✅ Confirmed"
 
       - name: Checkout code
         uses: actions/checkout@v6
@@ -51,207 +40,37 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_IP || '46.224.49.30' }} >> ~/.ssh/known_hosts
 
-      - name: List available backups
+      - name: Run state-restore on server
         run: |
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP || '46.224.49.30' }} << 'EOF'
-          echo "📋 Available backups on Storage Box:"
-          lftp -u "${{ secrets.STORAGEBOX_USER }},${{ secrets.STORAGEBOX_PASSWORD }}" -p 23 sftp://${{ secrets.STORAGEBOX_HOST }} << LFTP_LIST
-          set sftp:auto-confirm yes
-          set ssl:verify-certificate no
-          cd /home/backups/hosts/caller
-          cls -l --sort=date | head -20
-          bye
-          LFTP_LIST
-          EOF
+          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP || '46.224.49.30' }} \
+            "STORAGEBOX_HOST='${{ secrets.STORAGEBOX_HOST }}' \
+             STORAGEBOX_USER='${{ secrets.STORAGEBOX_USER }}' \
+             STORAGEBOX_PASSWORD='${{ secrets.STORAGEBOX_PASSWORD }}' \
+             /opt/backup/state-restore.sh"
 
-      - name: Download and restore backup
-        run: |
-          ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP || '46.224.49.30' }} << 'EOF'
-          set -e
-          
-          BACKUP_DATE="${{ github.event.inputs.backup_date }}"
-          RESTORE_COMPONENTS="${{ github.event.inputs.restore_components }}"
-          STORAGEBOX_HOST="${{ secrets.STORAGEBOX_HOST }}"
-          STORAGEBOX_USER="${{ secrets.STORAGEBOX_USER }}"
-          STORAGEBOX_PASSWORD="${{ secrets.STORAGEBOX_PASSWORD }}"
-          STORAGEBOX_PORT="23"
-          REMOTE_BASE="/home/backups/hosts/caller"
-          RESTORE_DIR="/tmp/restore-$(date +%Y%m%d_%H%M%S)"
-          
-          echo "========================================"
-          echo "🔄 Starting Restore Operation"
-          echo "Backup Date: ${BACKUP_DATE}"
-          echo "Components: ${RESTORE_COMPONENTS}"
-          echo "Started at: $(date)"
-          echo "========================================"
-          
-          mkdir -p "${RESTORE_DIR}"
-          cd "${RESTORE_DIR}"
-          
-          # Download backups from Storage Box
-          echo "⬇️  Downloading backup files..."
-          if [ "$BACKUP_DATE" = "latest" ]; then
-            echo "📦 Finding latest backup..."
-            lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_DOWNLOAD
-          set sftp:auto-confirm yes
-          set ssl:verify-certificate no
-          cd ${REMOTE_BASE}
-          mget *$(ls -t *.tar.gz *.sql.gz 2>/dev/null | head -1 | grep -oP '\d{8}_\d{6}')*
-          bye
-          LFTP_DOWNLOAD
-          else
-            lftp -u "${STORAGEBOX_USER},${STORAGEBOX_PASSWORD}" -p ${STORAGEBOX_PORT} sftp://${STORAGEBOX_HOST} << LFTP_DOWNLOAD
-          set sftp:auto-confirm yes
-          set ssl:verify-certificate no
-          cd ${REMOTE_BASE}
-          mget *${BACKUP_DATE}*
-          bye
-          LFTP_DOWNLOAD
-          fi
-          
-          echo "📥 Downloaded files:"
-          ls -lh
-          
-          # Stop services before restore
-          echo "⏸️  Stopping services..."
-          cd /opt/services
-          docker compose stop
-          
-          # Restore based on selection
-          if [ "$RESTORE_COMPONENTS" = "all" ] || [ "$RESTORE_COMPONENTS" = "database-only" ]; then
-            echo "🗄️  Restoring PostgreSQL database..."
-            DB_FILE=$(ls ${RESTORE_DIR}/matrix-postgres-*.sql.gz | head -1)
-            if [ -f "$DB_FILE" ]; then
-              docker compose start matrix-postgres
-              sleep 5
-              gunzip -c "$DB_FILE" | docker exec -i matrix-postgres psql -U synapse -d synapse
-              echo "✅ Database restored"
-            else
-              echo "⚠️  No database backup found"
-            fi
-          fi
-          
-          if [ "$RESTORE_COMPONENTS" = "all" ] || [ "$RESTORE_COMPONENTS" = "matrix-only" ]; then
-            echo "💬 Restoring Matrix Synapse data..."
-            MATRIX_FILE=$(ls ${RESTORE_DIR}/matrix-data-*.tar.gz | head -1)
-            if [ -f "$MATRIX_FILE" ]; then
-              rm -rf /opt/services/matrix/*
-              tar -xzf "$MATRIX_FILE" -C /opt/services/matrix/
-              echo "✅ Matrix data restored"
-            else
-              echo "⚠️  No Matrix backup found"
-            fi
-          fi
-          
-          if [ "$RESTORE_COMPONENTS" = "all" ] || [ "$RESTORE_COMPONENTS" = "jitsi-only" ]; then
-            echo "📹 Restoring Jitsi configs..."
-            JITSI_FILE=$(ls ${RESTORE_DIR}/jitsi-*.tar.gz | head -1)
-            if [ -f "$JITSI_FILE" ]; then
-              rm -rf /opt/services/jitsi/*
-              tar -xzf "$JITSI_FILE" -C /opt/services/jitsi/
-              echo "✅ Jitsi configs restored"
-            else
-              echo "⚠️  No Jitsi backup found"
-            fi
-          fi
-          
-          if [ "$RESTORE_COMPONENTS" = "all" ] || [ "$RESTORE_COMPONENTS" = "wireguard-only" ]; then
-            echo "🔐 Restoring WireGuard configs..."
-            WG_FILE=$(ls ${RESTORE_DIR}/wireguard-[0-9]*.tar.gz | head -1)
-            WGUI_FILE=$(ls ${RESTORE_DIR}/wireguard-ui-*.tar.gz | head -1)
-            if [ -f "$WG_FILE" ]; then
-              rm -rf /etc/wireguard/*
-              tar -xzf "$WG_FILE" -C /etc/
-              echo "✅ WireGuard server configs restored"
-            fi
-            if [ -f "$WGUI_FILE" ]; then
-              rm -rf /opt/services/wireguard-ui/*
-              tar -xzf "$WGUI_FILE" -C /opt/services/wireguard-ui/
-              echo "✅ WireGuard UI data restored"
-            fi
-            if [ ! -f "$WG_FILE" ] && [ ! -f "$WGUI_FILE" ]; then
-              echo "⚠️  No WireGuard backup found"
-            fi
-          fi
-          
-          if [ "$RESTORE_COMPONENTS" = "all" ] || [ "$RESTORE_COMPONENTS" = "traefik-only" ]; then
-            echo "🔒 Restoring Traefik SSL certificates..."
-            TRAEFIK_FILE=$(ls ${RESTORE_DIR}/traefik-*.tar.gz | head -1)
-            if [ -f "$TRAEFIK_FILE" ]; then
-              rm -rf /opt/services/traefik/*
-              tar -xzf "$TRAEFIK_FILE" -C /opt/services/traefik/
-              chmod 600 /opt/services/traefik/acme/acme.json
-              echo "✅ Traefik configs restored"
-            else
-              echo "⚠️  No Traefik backup found"
-            fi
-          fi
-          
-          if [ "$RESTORE_COMPONENTS" = "all" ] || [ "$RESTORE_COMPONENTS" = "mailserver-only" ]; then
-            echo "📧 Restoring mail server data..."
-            MAILSERVER_FILE=$(ls ${RESTORE_DIR}/mailserver-*.tar.gz | head -1)
-            if [ -f "$MAILSERVER_FILE" ]; then
-              rm -rf /opt/services/mailserver/*
-              tar -xzf "$MAILSERVER_FILE" -C /opt/services/mailserver/
-              echo "✅ Mail server data restored"
-            else
-              echo "⚠️  No mail server backup found"
-            fi
-          fi
-          
-          # Cleanup restore files
-          echo "🧹 Cleaning up..."
-          rm -rf "${RESTORE_DIR}"
-          
-          # Restart all services
-          echo "🔄 Restarting all services..."
-          cd /opt/services
-          docker compose down
-          docker compose up -d
-          
-          echo "⏳ Waiting for services to start..."
-          sleep 15
-          
-          echo "📊 Service status:"
-          docker compose ps
-          
-          echo "========================================"
-          echo "✅ Restore completed successfully!"
-          echo "Finished at: $(date)"
-          echo "========================================"
-          EOF
-
-      - name: Health check after restore
+      - name: Health checks
         run: |
           sleep 30
           ssh -i ~/.ssh/id_rsa root@${{ secrets.SERVER_IP || '46.224.49.30' }} << 'EOF'
-          echo "🏥 Running health checks..."
-          
-          echo "Checking Matrix Synapse..."
-          curl -sf https://matrix.${{ secrets.DOMAIN_NAME }}/_matrix/client/versions > /dev/null && echo "✅ Matrix OK" || echo "❌ Matrix FAILED"
-          
-          echo "Checking Element Web..."
-          curl -sf https://chat.${{ secrets.DOMAIN_NAME }} > /dev/null && echo "✅ Element OK" || echo "❌ Element FAILED"
-          
-          echo "Checking Jitsi Meet..."
-          curl -sf https://meet.${{ secrets.DOMAIN_NAME }} > /dev/null && echo "✅ Jitsi OK" || echo "❌ Jitsi FAILED"
-          
-          echo "Checking WireGuard UI..."
-          curl -sf https://vpn.${{ secrets.DOMAIN_NAME }} > /dev/null && echo "✅ WireGuard UI OK" || echo "❌ WireGuard UI FAILED"
-          
-          echo "Checking Traefik..."
-          curl -sf https://${{ secrets.DOMAIN_NAME }}:8080/api/http/routers > /dev/null && echo "✅ Traefik OK" || echo "❌ Traefik FAILED"
+          echo "🏥 Health checks after restore:"
+          curl -sf https://matrix.${{ secrets.DOMAIN_NAME }}/_matrix/client/versions > /dev/null \
+            && echo "✅ Matrix OK" || echo "❌ Matrix FAILED"
+          curl -sf https://chat.${{ secrets.DOMAIN_NAME }} > /dev/null \
+            && echo "✅ Element OK" || echo "❌ Element FAILED"
+          curl -sf https://meet.${{ secrets.DOMAIN_NAME }} > /dev/null \
+            && echo "✅ Jitsi OK"  || echo "❌ Jitsi FAILED"
+          curl -sf https://vpn.${{ secrets.DOMAIN_NAME }} > /dev/null \
+            && echo "✅ WireGuard UI OK" || echo "❌ WireGuard UI FAILED"
           EOF
 
       - name: Summary
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Restore completed successfully"
-            echo "All services have been restarted"
-            echo "Please verify functionality at your URLs"
+            echo "✅ Restore complete — all services restarted"
+            echo "Verify functionality at your service URLs."
           else
-            echo "❌ Restore failed"
-            echo "Check logs above for details"
-            echo "Services may be in inconsistent state - manual intervention may be required"
+            echo "❌ Restore failed — check logs above"
+            echo "Services may be in an inconsistent state — manual intervention may be needed."
           fi
+
