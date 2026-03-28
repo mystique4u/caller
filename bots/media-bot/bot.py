@@ -3,15 +3,17 @@
 media-bot — Matrix bot that downloads short-form media from links and re-posts them.
 
 Download strategy:
-  • YouTube / Instagram / TikTok / Twitter → cobalt.tools public API
+  • Instagram / TikTok → cobalt.tools public API
     (no cookies, no IP bans — cobalt handles auth on their side)
-  • Telegram posts → yt-dlp (cobalt does not support t.me)
+  • Telegram posts     → yt-dlp (cobalt does not support t.me)
 
-Supported URL patterns:
-  • YouTube Shorts         youtube.com/shorts/
+Active URL patterns:
   • Instagram Reels/Posts  instagram.com/reels/ or /p/
   • TikTok                 tiktok.com/ or vm.tiktok.com/
   • Telegram posts         t.me/<channel>/<id>
+
+Temporarily disabled (cobalt.tools restriction):
+  • YouTube Shorts         youtube.com/shorts/
   • Twitter / X            twitter.com/.../status/ or x.com/.../status/
 
 For each matching URL in a room message the bot will:
@@ -94,12 +96,14 @@ log = logging.getLogger("media-bot")
 # ── URL allowlist patterns ─────────────────────────────────────────────────────
 
 _URL_PATTERNS = [
-    re.compile(r'https?://(?:www\.)?youtube\.com/shorts/[\w-]+', re.I),
+    # YouTube disabled: cobalt.tools has temporarily suspended YouTube support
+    # re.compile(r'https?://(?:www\.)?youtube\.com/shorts/[\w-]+', re.I),
     re.compile(r'https?://(?:www\.)?instagram\.com/(?:reels?|p)/[\w-]+/?', re.I),
     re.compile(r'https?://(?:www\.)?tiktok\.com/@?[\w.%-]+/video/\d+', re.I),
     re.compile(r'https?://(?:vm|vt)\.tiktok\.com/[\w-]+', re.I),
     re.compile(r'https?://t\.me/\w+/\d+', re.I),
-    re.compile(r'https?://(?:www\.)?(?:twitter|x)\.com/\w+/status/\d+', re.I),
+    # Twitter/X disabled along with YouTube — re-enable when cobalt restores support
+    # re.compile(r'https?://(?:www\.)?(?:twitter|x)\.com/\w+/status/\d+', re.I),
 ]
 
 # MIME type map for common download extensions

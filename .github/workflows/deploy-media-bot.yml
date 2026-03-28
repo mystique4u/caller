@@ -153,25 +153,6 @@ jobs:
             echo "✅ Matrix user @${BOT_USERNAME} registered"
           fi
 
-      - name: Deploy YouTube cookies from GitHub Secret (if set)
-        env:
-          SERVER_IP:              ${{ needs.get-server-ip.outputs.server_ip }}
-          YOUTUBE_COOKIES_B64:    ${{ secrets.YOUTUBE_COOKIES_B64 }}
-        run: |
-          if [[ -z "$YOUTUBE_COOKIES_B64" ]]; then
-            echo "ℹ️  YOUTUBE_COOKIES_B64 not set — YouTube Shorts may be blocked"
-            echo "   To fix: export cookies from your browser (see instructions below)"
-            exit 0
-          fi
-          echo "$YOUTUBE_COOKIES_B64" | base64 -d > /tmp/youtube-cookies.txt
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
-            /tmp/youtube-cookies.txt \
-            "root@${SERVER_IP}:/opt/services/bots/media-bot/data/youtube-cookies.txt"
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${SERVER_IP} \
-            "chmod 600 '/opt/services/bots/media-bot/data/youtube-cookies.txt'"
-          rm -f /tmp/youtube-cookies.txt
-          echo "✅ YouTube cookies deployed — Shorts downloads will work immediately"
-
       - name: Deploy Telegram session from GitHub Secret (if set)
         env:
           SERVER_IP:             ${{ needs.get-server-ip.outputs.server_ip }}
@@ -202,7 +183,11 @@ jobs:
           BOT_PASSWORD:     ${{ steps.creds.outputs.bot_password }}
           TELEGRAM_API_ID:  ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          COBALT_API_URL:   ${{ secrets.COBALT_API_URL }}
         run: |
+          # COBALT_API_URL defaults to public API if not set as a GitHub Secret.
+          # Set it only if you self-host a cobalt instance.
+          COBALT_URL=${COBALT_API_URL:-https://api.cobalt.tools}
           cat > /tmp/docker-compose.media-bot.yml << YAML
           services:
             media-bot:
@@ -218,6 +203,7 @@ jobs:
                 - MATRIX_DOMAIN=${DOMAIN_NAME}
                 - MATRIX_INTERNAL_URL=http://matrix-synapse:8008
                 - MAX_FILE_SIZE_MB=250
+                - COBALT_API_URL=${COBALT_URL}
                 - TELEGRAM_API_ID=${TELEGRAM_API_ID}
                 - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
                 - PORT=3003
