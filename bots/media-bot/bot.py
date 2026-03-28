@@ -2,15 +2,20 @@
 """
 media-bot — Matrix bot that downloads short-form media from links and re-posts them.
 
-Supported platforms (URL allowlist):
+Download strategy:
+  • YouTube / Instagram / TikTok / Twitter → cobalt.tools public API
+    (no cookies, no IP bans — cobalt handles auth on their side)
+  • Telegram posts → yt-dlp (cobalt does not support t.me)
+
+Supported URL patterns:
   • YouTube Shorts         youtube.com/shorts/
-  • Instagram Reels/Posts  instagram.com/reel/ or /p/
+  • Instagram Reels/Posts  instagram.com/reels/ or /p/
   • TikTok                 tiktok.com/ or vm.tiktok.com/
   • Telegram posts         t.me/<channel>/<id>
   • Twitter / X            twitter.com/.../status/ or x.com/.../status/
 
 For each matching URL in a room message the bot will:
-  1. Download the media via yt-dlp (max MAX_FILE_SIZE_MB, default 250 MB)
+  1. Download the media
   2. Upload it to the Matrix media store
   3. Post a formatted message with caption + original link
   4. Redact / delete the original message
@@ -27,6 +32,7 @@ Optional environment variables:
   MATRIX_INTERNAL_URL   default: http://matrix-synapse:8008
   MATRIX_ROOM_ID        Restrict processing to one room ID
   MAX_FILE_SIZE_MB      Maximum download size in MB; default: 250
+  COBALT_API_URL        cobalt API base URL; default: https://api.cobalt.tools
   TELEGRAM_API_ID       Telegram app api_id (for t.me link downloads)
   TELEGRAM_API_HASH     Telegram app api_hash (for t.me link downloads)
   PORT                  Health endpoint port; default: 3003
@@ -39,9 +45,7 @@ import logging
 import mimetypes
 import os
 import re
-import shutil
 import sys
-import tempfile
 import threading
 import time
 import urllib.parse
@@ -59,9 +63,9 @@ BOT_PASSWORD        = os.environ.get("BOT_PASSWORD", "")
 MATRIX_DOMAIN       = os.environ.get("MATRIX_DOMAIN", "")
 MATRIX_ROOM_ID      = os.environ.get("MATRIX_ROOM_ID", "")
 MAX_FILE_SIZE_MB    = int(os.environ.get("MAX_FILE_SIZE_MB", "250"))
+COBALT_API_URL      = os.environ.get("COBALT_API_URL", "https://api.cobalt.tools").rstrip("/")
 TELEGRAM_API_ID     = os.environ.get("TELEGRAM_API_ID", "")
 TELEGRAM_API_HASH   = os.environ.get("TELEGRAM_API_HASH", "")
-YOUTUBE_COOKIES_FILE = os.environ.get("YOUTUBE_COOKIES_FILE", "/data/youtube-cookies.txt")
 PORT                = int(os.environ.get("PORT", "3003"))
 
 if not BOT_PASSWORD:
@@ -265,6 +269,84 @@ def _is_telegram_url(url: str) -> bool:
     return bool(re.match(r'https?://t\.me/', url, re.I))
 
 
+# ── cobalt.tools downloader ───────────────────────────────────────────────────
+# cobalt.tools is a public media download API that handles YouTube, Instagram,
+# TikTok, Twitter/X and many others on their own infrastructure — no cookies or
+# IP authentication needed on the server side.
+
+def _cobalt_download(url: str) -> tuple[str, str]:
+    """
+    Download a media URL via the cobalt.tools API.
+    Returns (local_filepath, filename).
+    Raises RuntimeError on API error or download failure.
+    """
+    _MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+
+    log.info("cobalt: requesting %s", url)
+    try:
+        resp = requests.post(
+            f"{COBALT_API_URL}/",
+            json={"url": url, "videoQuality": "1080", "downloadMode": "auto", "filenameStyle": "basic"},
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(f"cobalt API request failed: {exc}") from exc
+
+    status = data.get("status")
+    log.info("cobalt: status=%s", status)
+
+    if status == "error":
+        err = data.get("error", {})
+        raise RuntimeError(f"cobalt error: {err.get('code', 'unknown')}")
+
+    if status in ("tunnel", "redirect"):
+        media_url = data["url"]
+        filename  = data.get("filename") or f"{url_hash}.mp4"
+        return _cobalt_fetch_file(media_url, filename, url_hash)
+
+    if status == "picker":
+        # Multiple items (e.g. Twitter with image+video, slideshow)
+        items = data.get("picker", [])
+        if not items:
+            raise RuntimeError("cobalt returned empty picker")
+        # Download the first item that has a URL
+        for item in items:
+            item_url = item.get("url")
+            if item_url:
+                filename = item.get("filename") or f"{url_hash}.mp4"
+                return _cobalt_fetch_file(item_url, filename, url_hash)
+        raise RuntimeError("cobalt picker had no downloadable items")
+
+    raise RuntimeError(f"cobalt returned unexpected status: {status}")
+
+
+def _cobalt_fetch_file(media_url: str, filename: str, url_hash: str) -> tuple[str, str]:
+    """Stream a cobalt media URL to disk. Returns (filepath, filename)."""
+    max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
+    ext = Path(filename).suffix or ".mp4"
+    filepath = str(_MEDIA_DIR / f"{url_hash}{ext}")
+
+    log.info("cobalt: downloading %s → %s", media_url, filepath)
+    with requests.get(media_url, stream=True, timeout=120) as r:
+        r.raise_for_status()
+        downloaded = 0
+        with open(filepath, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 256):
+                downloaded += len(chunk)
+                if downloaded > max_bytes:
+                    raise RuntimeError(
+                        f"File exceeds {MAX_FILE_SIZE_MB} MB size limit"
+                    )
+                f.write(chunk)
+    return filepath, filename
+
+
+# ── yt-dlp downloader (Telegram only) ────────────────────────────────────────
+
 class _YDLLogger:
     """Forwards yt-dlp messages into Python logging and captures the last warning."""
     def __init__(self):
@@ -281,11 +363,10 @@ class _YDLLogger:
         log.error("yt-dlp: %s", msg)
 
 
-def _download(url: str) -> tuple[str, dict]:
+def _download_telegram(url: str) -> tuple[str, dict]:
     """
-    Download URL via yt-dlp.
+    Download a Telegram t.me URL via yt-dlp.
     Returns (local_filepath, info_dict).
-    Raises yt_dlp.utils.DownloadError or FileNotFoundError on failure.
     """
     _MEDIA_DIR.mkdir(parents=True, exist_ok=True)
     url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
@@ -304,39 +385,17 @@ def _download(url: str) -> tuple[str, dict]:
         "logger": _logger,
     }
 
-    # YouTube: mweb (mobile web) player client works for public videos without
-    # PO tokens. tv_embedded and ios require PO tokens in yt-dlp 2026.
-    # Cookies (when fresh) are also passed for sign-in confirmation fallback.
-    _is_youtube = "youtube.com" in url or "youtu.be" in url
-    if _is_youtube:
-        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["mweb", "android_vr"]}}
-
-    # YouTube cookies — passed as fallback for age-restricted / private content.
-    # We pass a TEMP COPY to yt-dlp so it cannot overwrite the original file
-    # (yt-dlp rewrites the cookiefile on every run, stripping auth cookies).
-    cookies_path = Path(YOUTUBE_COOKIES_FILE)
-    _tmp_cookies = None
-    if cookies_path.exists():
-        _tmp_cookies = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
-        shutil.copy2(str(cookies_path), _tmp_cookies.name)
-        _tmp_cookies.close()
-        ydl_opts["cookiefile"] = _tmp_cookies.name
-        log.debug("Using cookies (temp copy) from %s", cookies_path)
-
-    # Telegram credentials for t.me link downloads
-    if _is_telegram_url(url):
-        if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
-            raise RuntimeError(
-                "TELEGRAM_API_ID and TELEGRAM_API_HASH are required for t.me links"
-            )
-        ydl_opts["extractor_args"] = {
-            "Telegram": {
-                "api_id": [TELEGRAM_API_ID],
-                "api_hash": [TELEGRAM_API_HASH],
-            }
+    if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
+        raise RuntimeError(
+            "TELEGRAM_API_ID and TELEGRAM_API_HASH are required for t.me links"
+        )
+    ydl_opts["extractor_args"] = {
+        "Telegram": {
+            "api_id": [TELEGRAM_API_ID],
+            "api_hash": [TELEGRAM_API_HASH],
         }
+    }
 
-    # Run yt-dlp from /data/ so Telethon session files are stored there
     original_cwd = os.getcwd()
     try:
         os.chdir(str(_DATA_DIR))
@@ -344,11 +403,6 @@ def _download(url: str) -> tuple[str, dict]:
             info = ydl.extract_info(url, download=True)
     finally:
         os.chdir(original_cwd)
-        if _tmp_cookies:
-            try:
-                os.unlink(_tmp_cookies.name)
-            except Exception:
-                pass
 
     if info is None:
         warn = _logger.last_warning
@@ -359,21 +413,17 @@ def _download(url: str) -> tuple[str, dict]:
             )
         raise RuntimeError(f"yt-dlp returned no info{': ' + warn if warn else ''}")
 
-    # Resolve the actual downloaded file path
     filepath = None
     for dl in info.get("requested_downloads", []):
         fp = dl.get("filepath", "")
         if fp and Path(fp).exists():
             filepath = fp
             break
-
     if not filepath:
-        # Fallback: find newest file matching the hash prefix
         candidates = sorted(_MEDIA_DIR.glob(f"{url_hash}.*"),
                              key=lambda p: p.stat().st_mtime, reverse=True)
         if candidates:
             filepath = str(candidates[0])
-
     if not filepath or not Path(filepath).exists():
         raise FileNotFoundError(f"yt-dlp did not produce a file for: {url}")
 
@@ -435,7 +485,14 @@ def _process_url(url: str, room_id: str, event_id: str):
     filepath = None
 
     try:
-        filepath, info = _download(url)
+        if _is_telegram_url(url):
+            # Telegram: use yt-dlp (cobalt doesn't support t.me)
+            filepath, info = _download_telegram(url)
+            title = (info.get("description") or info.get("title") or "").strip()
+        else:
+            # YouTube / Instagram / TikTok / Twitter: use cobalt.tools
+            filepath, _filename = _cobalt_download(url)
+            title = ""  # cobalt doesn't return metadata
 
         ext = Path(filepath).suffix.lower()
         mimetype = _MIME.get(ext) or mimetypes.guess_type(filepath)[0] or "application/octet-stream"
@@ -445,24 +502,13 @@ def _process_url(url: str, room_id: str, event_id: str):
         log.info("Uploading %s (%d MB)…", filename, file_size // (1024 * 1024))
         mxc_uri = _upload_file(filepath, filename, mimetype)
 
-        # Build caption
-        # For Telegram, description = the post text; title = channel name or generic
-        if _is_telegram_url(url):
-            title = (info.get("description") or info.get("title") or "").strip()
-        else:
-            title = (info.get("title") or info.get("description") or "").strip()
         caption_plain = (title[:900] + "\n\n" if title else "") + f"🔗 {url}"
         caption_html = (
             (html.escape(title[:900]) + "<br><br>" if title else "")
             + f"🔗 <a href='{html.escape(url)}'>{html.escape(url)}</a>"
         )
 
-        # Determine message type
         media_info: dict = {"mimetype": mimetype, "size": file_size}
-        if "width" in info:
-            media_info["w"] = info["width"]
-        if "height" in info:
-            media_info["h"] = info["height"]
 
         if mimetype.startswith("video/"):
             msgtype = "m.video"
