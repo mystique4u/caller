@@ -37,6 +37,10 @@
     security_bot_password: "{{ lookup('env', 'SECURITY_BOT_PASSWORD') }}"
     security_webhook_secret: "{{ lookup('env', 'SECURITY_WEBHOOK_SECRET') }}"
     security_bot_room: "{{ lookup('env', 'SECURITY_BOT_ROOM') | default('', true) }}"
+    # Media Bot
+    media_bot_password: "{{ lookup('env', 'MEDIA_BOT_PASSWORD') }}"
+    telegram_api_id: "{{ lookup('env', 'TELEGRAM_API_ID') | default('', true) }}"
+    telegram_api_hash: "{{ lookup('env', 'TELEGRAM_API_HASH') | default('', true) }}"
 
   tasks:
     - name: System setup and Docker installation
@@ -70,6 +74,10 @@
     - name: Deploy Security Bot
       include_tasks: tasks/bot-security.yml
       tags: ['bot', 'security-bot']
+
+    - name: Deploy Media Bot
+      include_tasks: tasks/bot-media.yml
+      tags: ['bot', 'media-bot']
 
     - name: Deploy RouteMaker application
       include_tasks: tasks/routemaker.yml

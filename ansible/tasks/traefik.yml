@@ -39,3 +39,9 @@
     src: wireguard-dynamic.yml.j2
     dest: /opt/services/traefik/dynamic/wireguard-ui.yml
     mode: '0644'
+
+- name: Deploy Matrix media performance configuration (gzip + cache headers)
+  template:
+    src: traefik-matrix-media.yml.j2
+    dest: /opt/services/traefik/dynamic/matrix-media.yml
+    mode: '0644'
